@@ -1,4 +1,23 @@
 import numpy as np
+import pandas as pd
+
+# ------------------------------------------------------------------
+#  Güvenli hücre erişimi: Series   -> ilk eleman
+#                        ndarray   -> ilk eleman
+#                        skalar    -> aynen
+# ------------------------------------------------------------------
+def scalar(x):
+    if isinstance(x, (pd.Series, np.ndarray)):
+        return x.iloc[0] if isinstance(x, pd.Series) else x[0]
+    return x
+
+# ---------------------------------------------------------------
+#  Yardımcı: boş veya NaN → np.nan, aksi hâlde skalar değer döner
+# ---------------------------------------------------------------
+def safe_float(x):
+    x = scalar(x)
+    return np.nan if pd.isna(x) else float(x)
+# ---------------------------------------------------------------
 
 def safe_divide(numerator, denominator):
     if denominator in [0, None, np.nan] or numerator in [None, np.nan]:

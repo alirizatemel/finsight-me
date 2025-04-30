@@ -5,11 +5,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt # type: ignore
 import matplotlib.dates as mdates # type: ignore
-from modules.utils import safe_divide
+from modules.utils import safe_divide, safe_float, scalar
 import streamlit as st # type: ignore
 from typing import Optional 
 from modules.data_loader import load_financial_data
 from modules.financial_snapshot import build_snapshot
+
+
 
 def monte_carlo_dcf_simple(
     last_fcf: float,
@@ -60,9 +62,9 @@ def monte_carlo_dcf_simple(
 
 
 def calculate_piotroski_f_score(row, balance, income, curr, prev):
-    net_profit = row["Net Dönem Karı"].values[0]
-    operating_cash_flow = row["İşletme Faaliyetlerinden Nakit Akışları"].values[0]
-    total_assets = row["Toplam Varlıklar"].values[0]
+    net_profit = scalar(row["Net Dönem Karı"])
+    operating_cash_flow = scalar(row["İşletme Faaliyetlerinden Nakit Akışları"])
+    total_assets = scalar(row["Toplam Varlıklar"])
     f_score = 0
     detail = {}
 
@@ -160,9 +162,9 @@ def peter_lynch_score_card(row):
     lines = []
 
     try:
-        market_cap = row.get("Piyasa Değeri")
-        operating_cf = row.get("İşletme Faaliyetlerinden Nakit Akışları")
-        fcf = row.get("Yıllıklandırılmış Serbest Nakit Akışı")
+        market_cap = safe_float(row.get("Piyasa Değeri"))
+        operating_cf = safe_float(row.get("İşletme Faaliyetlerinden Nakit Akışları"))
+        fcf = safe_float(row.get("Yıllıklandırılmış Serbest Nakit Akışı"))
 
         # FCF Verimi
         if pd.notnull(fcf) and pd.notnull(market_cap) and market_cap > 0:
@@ -394,10 +396,10 @@ def fcf_detailed_analysis_plot(company, row):
     fcf_series = operating_cf_series - capex_series
 
     market_cap = row['Piyasa Değeri']
-    if market_cap.empty or market_cap.values[0] <= 0:
+    if market_cap.empty or scalar(market_cap) <= 0:
         print("⛔ Piyasa değeri geçersiz.")
         return None
-    pdg = market_cap.values[0]
+    pdg = scalar(market_cap)
 
     fcf_yield = (fcf_series / pdg * 100).dropna()
 

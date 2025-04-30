@@ -13,6 +13,13 @@ from modules.scores import (
     monte_carlo_dcf_simple
 )
 
+def latest_common_period(balance, income, cashflow):
+    bal_periods = {c for c in balance.columns if "/" in c}
+    inc_periods = {c for c in income.columns  if "/" in c}
+    cf_periods  = {c for c in cashflow.columns if "/" in c}
+    return sorted(bal_periods & inc_periods & cf_periods,
+                  key=period_order, reverse=True)
+
 # --- yeni, önerilen yöntem -----------------------
 params = st.query_params          # doğrudan Mapping[str, str]
 default_symbol = params.get("symbol", "").upper()
@@ -54,16 +61,14 @@ def main():
         st.error(f"{symbol} verileri bulunamadı.")
         st.stop()
 
-    # Dönem kontrolü
-    periods = sorted(
-        [c for c in balance.columns if "/" in c],
-        key=period_order,
-        reverse=True,
-    )
+    # --- DÖNEM KONTROLÜ ------------------------------------------
+    periods = latest_common_period(balance, income, cashflow)
     if len(periods) < 2:
-        st.error("Yeterli dönem bilgisi yok (en az 2 dönem gerek).")
+        st.error("Üç temel tabloda da en az iki ortak dönem lazım.")
         st.stop()
-    curr, prev = periods[:2]
+
+    curr, prev = periods[:2]          # en yeni ve bir önceki
+    st.info(f"🔎 Kullanılan son bilanço dönemi: **{curr}**")
 
     # Radar satırı
     radar_df = get_radar()
