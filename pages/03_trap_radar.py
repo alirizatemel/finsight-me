@@ -1,9 +1,9 @@
-"""Streamlit page – 🚨 Tuzak Radar (Value‑Trap Scanner)
+"""Streamlit page - 🚨 Tuzak Radar (Value-Trap Scanner)
 
 Finansal Radar altyapısını temel alarak, her BIST şirketi için:
-• Piotroski F, Beneish M, Graham ve Peter Lynch temel skorlarını hesaplar
-• Son 12 ay FCF üzerinden Monte‑Carlo DCF (tek‑aşamalı) medyan içsel değeri bulur
-• Piyasa değerine göre Margin‑of‑Safety (MOS) çıkartır
+• Piotroski F, Beneish M, Graham ve Peter Lynch temel skorlarını hesaplar
+• Son 12 ay FCF üzerinden Monte-Carlo DCF (tek-aşamalı) medyan içsel değeri bulur
+• Piyasa değerine göre Margin-of-Safety (MOS) çıkartır
 • MOS eşiğini geçen en iyi 15 hisselik tablo + grafik gösterir
 • Eksik veri / hata kayıtlarını “Loglar” bölümünde listeler
 """
@@ -107,12 +107,16 @@ def run_scan(radar: pd.DataFrame, forecast_years: int, n_sims: int):
             if pd.isna(market_cap) or market_cap <= 0:
                 raise ValueError("piyasa değeri yok")
 
-            mos = (intrinsic - market_cap) / intrinsic
+            price = safe_float(row.get("Son Fiyat"))
+            if pd.isna(price) or price <= 0:
+                raise ValueError("Fiyat değeri yok")
+
+            mos = (intrinsic - price) / intrinsic
 
             records.append({
                 "Şirket": c,
                 "F-Skor": f_score,
-                "M-Skor": m_score,
+                "M-Skor": f"{round(m_score, 2)} ⚠️" if m_score > -2.22 else f"{round(m_score, 2)}",
                 "Graham": graham,
                 "Lynch":  lynch,
                 "İçsel Değer (Medyan)": intrinsic,
@@ -150,8 +154,8 @@ def run_scan(radar: pd.DataFrame, forecast_years: int, n_sims: int):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    st.title("🚨 Tuzak Radar – Top 15")
-    st.caption("Finansal Radar taramasından türetilmiş, **margin‑of‑safety** odaklı fırsat/tuzak listesi.")
+    st.title("🚨 Tuzak Radar - Top 15")
+    st.caption("Finansal Radar taramasından türetilmiş, **margin-of-safety** odaklı fırsat/tuzak listesi.")
 
     radar = load_radar()
 
@@ -176,7 +180,7 @@ def main():
             st.info("Filtreni̇ geçecek şirket bulunamadı. MOS eşiğini düşür veya veri setini güncelle.")
             return
 
-        top15 = df[df["MOS"] >= min_mos].head(15)
+        top15 = df[(df["MOS"] >= min_mos) & (df["Graham"] >= 2) & (df["Lynch"] >= 2)].head(15)
         st.subheader(f"En İyi {len(top15)} Hisse (MOS ≥ {min_mos:.0%})")
         st.dataframe(
             top15.style
@@ -185,6 +189,7 @@ def main():
                      "Piyasa Değeri":        "{:,.0f}",
                      "MOS":                  "{:.1%}",
                  })
+                 .set_properties(subset=["M-Skor"], **{"text-align": "right"})
                  .background_gradient(subset=["MOS"], cmap="RdYlGn")
         )
         st.bar_chart(top15.set_index("Şirket")["MOS"])

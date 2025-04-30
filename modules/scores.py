@@ -198,7 +198,6 @@ def peter_lynch_score_card(row):
     description = f"Peter Lynch Skoru: {score} / 3"
     return score, description, lines
 
-
 def period_order(period_str):
     try:
         year, month = period_str.split("/")
@@ -246,7 +245,6 @@ def graham_score_card(row):
     description = f"Graham Skoru: {score} / 5"
     return score, description, lines
 
-
 def m_skor_karne_yorum(m_skor):
     if m_skor is None:
         return "M-Skor verisi eksik", ["❌ M-Skor hesaplanamadı"]
@@ -254,7 +252,6 @@ def m_skor_karne_yorum(m_skor):
     passed = m_skor < -2.22
     yorum = "✅ Düşük risk (finansal manipülasyon ihtimali düşük)" if passed else "⚠️ Yüksek risk (bozulma/makyaj riski)"
     return f"{m_skor:.2f}", [f"M-Skor = {m_skor:.2f} → {yorum}"]
-
 
 def f_skor_karne_yorum(f_score):
     if f_score is None:
@@ -327,7 +324,6 @@ def fcf_yield_time_series(company, row):
 
     except Exception as e:
         st.error(f"⚠️ {company} için grafik oluşturulamadı: {e}")
-
 
 def fcf_detailed_analysis(company, row):
     # 1) Excel verilerini oku
@@ -479,7 +475,6 @@ def calculate_scores(company, row, balance, income, cashflow, current_period, pr
         "lynch_lines": lynch_lines,
         "detail": detail
     }
-
 
 def generate_report(company, scores, show_details=False):
     """Skor nesnesinden okunabilir bir metin raporu üret."""
