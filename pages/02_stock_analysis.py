@@ -1,7 +1,7 @@
 import streamlit as st  # type: ignore
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # type: ignore
 from modules.data_loader import load_financial_data
 from modules.scores import (
     calculate_scores,
@@ -12,6 +12,7 @@ from modules.scores import (
     fcf_yield_time_series,
     monte_carlo_dcf_simple
 )
+from config import RADAR_XLSX
 
 def latest_common_period(balance, income, cashflow):
     bal_periods = {c for c in balance.columns if "/" in c}
@@ -39,8 +40,7 @@ def get_financials(symbol: str):
 @st.cache_data(show_spinner=False)
 def get_radar() -> pd.DataFrame:
     """Read the pre‑built fintables_radar Excel once and cache it."""
-    radar_file = "companies/fintables_radar.xlsx"
-    df = pd.read_excel(radar_file)
+    df = pd.read_excel(RADAR_XLSX)
     df["Şirket"] = df["Şirket"].str.strip()
     return df
 
@@ -187,6 +187,7 @@ def main():
                         f"{intrinsic_ps:,.2f}")
 
                 premium = (intrinsic_ps - cur_price) / cur_price * 100
+                
                 st.caption(f"🎯 Mevcut fiyat {cur_price:,.2f} TL — "
                         f"potansiyel {premium:+.1f}%")
             else:

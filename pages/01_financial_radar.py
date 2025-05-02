@@ -2,10 +2,9 @@ import streamlit as st # type: ignore
 import pandas as pd
 from modules.data_loader import load_financial_data
 from modules.scores import calculate_piotroski_f_score, calculate_beneish_m_score, peter_lynch_score_card, graham_score
-from streamlit import column_config as cc
+from streamlit import column_config as cc # type: ignore
+from config import RADAR_XLSX
 
-
-RADAR_XLSX = "companies/fintables_radar.xlsx"
 
 loglar = []
 

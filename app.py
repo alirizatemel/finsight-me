@@ -1,5 +1,5 @@
 
-import streamlit as st
+import streamlit as st # type: ignore
 
 st.set_page_config(page_title="FinSight Me", page_icon="💹", layout="wide")
 
@@ -11,7 +11,7 @@ st.title("FinSight Me")
 st.markdown(
     '''
     Multi‑page Streamlit app for analysing Borsa İstanbul companies.  
-    Place your **Fintables** Excel exports in `companies/<TICKER>/<TICKER> (TRY).xlsx`  
+    Place your **Fintables** Excel exports in `data/companies/<TICKER>/<TICKER> (TRY).xlsx`  
     and pick a page from the sidebar to start exploring.
     '''
 )

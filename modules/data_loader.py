@@ -1,8 +1,9 @@
 
 import pandas as pd
 from pathlib import Path
+from config import COMPANIES_DIR
 
-def load_financial_data(symbol: str, base_dir: Path = Path("companies")):
+def load_financial_data(symbol: str, base_dir: Path = Path(COMPANIES_DIR)):
     """Load Bilanço, Gelir Tablosu (Dönemsel) and Nakit Akış (Dönemsel) sheets for a ticker."""
     path = base_dir / symbol / f"{symbol} (TRY).xlsx"
     if not path.exists():

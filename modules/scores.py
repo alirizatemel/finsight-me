@@ -11,8 +11,6 @@ from typing import Optional
 from modules.data_loader import load_financial_data
 from modules.financial_snapshot import build_snapshot
 
-
-
 def monte_carlo_dcf_simple(
     last_fcf: float,
     forecast_years: int = 5,
@@ -60,13 +58,13 @@ def monte_carlo_dcf_simple(
 
     return pv_fcfs + pv_tv
 
-
 def calculate_piotroski_f_score(row, balance, income, curr, prev):
     net_profit = scalar(row["Net Dönem Karı"])
     operating_cash_flow = scalar(row["İşletme Faaliyetlerinden Nakit Akışları"])
     total_assets = scalar(row["Toplam Varlıklar"])
     f_score = 0
     detail = {}
+    detail_str = {}
 
     detail["Net Kar > 0"] = int(net_profit > 0)
     detail["ROA > 0"] = int((net_profit / total_assets) > 0 if total_assets else 0)
@@ -104,7 +102,23 @@ def calculate_piotroski_f_score(row, balance, income, curr, prev):
         detail["Brüt Kar Marjı Artmış"] = 0
         detail["Varlık Devir Hızı Artmış"] = 0
 
-    return f_score, detail
+    # Emojili gösterim (ayrı sözlükte)
+    emojis = {
+        "Net Kar > 0": "🟢",
+        "ROA > 0": "📈",
+        "Nakit Akışı > 0": "💸",
+        "Nakit Akışı > Net Kar": "🔄",
+        "Borç Oranı Azalmış": "📉",
+        "Cari Oran Artmış": "💧",
+        "Öz Kaynak Artmış": "🏦",
+        "Brüt Kar Marjı Artmış": "📊",
+        "Varlık Devir Hızı Artmış": "🔁",
+    }
+
+    for key, val in detail.items():
+        detail_str[f"{emojis.get(key, '')} {key}"] = "✅" if val else "❌"
+
+    return f_score, detail_str
 
 def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):
     try:

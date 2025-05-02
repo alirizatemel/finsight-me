@@ -11,7 +11,7 @@ Finansal Radar altyapısını temel alarak, her BIST şirketi için:
 import streamlit as st  # type: ignore
 import pandas as pd
 import numpy as np
-from streamlit import column_config as cc
+from streamlit import column_config as cc  # type: ignore
 import traceback 
 from modules.utils import safe_float
 from modules.data_loader import load_financial_data
@@ -22,9 +22,10 @@ from modules.scores import (
     peter_lynch_score_card,
     monte_carlo_dcf_simple,
     period_order,
+    fcf_detailed_analysis
 )
+from config import RADAR_XLSX
 
-RADAR_XLSX = "companies/fintables_radar.xlsx"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Yardımcılar
@@ -81,48 +82,47 @@ def run_scan(radar: pd.DataFrame, forecast_years: int, n_sims: int):
             graham, *_ = graham_score_card(row)
             lynch , *_ = peter_lynch_score_card(row)
 
-            # 🔹 FCF (son 4 çeyrek)
-            cf = cash.set_index("Kalem")
-            if "İşletme Faaliyetlerinden Nakit Akışları" not in cf.index:
-                raise ValueError("fcf verisi eksik")
-            ofcf = cf.loc["İşletme Faaliyetlerinden Nakit Akışları"]
-            capex_key = (
-                "Maddi ve Maddi Olmayan Duran Varlık Alımları"
-                if "Maddi ve Maddi Olmayan Duran Varlık Alımları" in cf.index
-                else "Yatırım Faaliyetlerinden Kaynaklanan Nakit Akışları"
-            )
-            capex = cf.loc[capex_key]
-            fcf_series = ofcf - capex
-            if fcf_series.tail(4).isna().all():
-                raise ValueError("fcf verisi eksik")
-            last_fcf = fcf_series.tail(4).sum()
+            # Son 12 ay FCF’i çek (yıllıklandırılmış)
+            df_fcf = fcf_detailed_analysis(c, row)
+            if df_fcf is None or df_fcf.empty:
+                raise ValueError("FCF verileri eksik.")
+
+            # --- trailing-12-month FCF (TTM) ------------------------------------
+            if len(df_fcf) >= 4:
+                last_fcf = df_fcf["FCF"].iloc[-4:].sum()   # TTM: son 4 çeyrek toplamı
+            else:
+                last_fcf = df_fcf["FCF"].iloc[-1]          # fallback: tek dönem
+
             if last_fcf <= 0:
-                raise ValueError("fcf negatif")
+                raise ValueError("Son FCF negatif veya sıfır, değerleme anlamsız.")
 
             intrinsic = np.median(
                 monte_carlo_dcf_simple(last_fcf, forecast_years=forecast_years, n_sims=n_sims)
             )
+            
+            # --- convert EV → intrinsic value per share -------------------------------
+            cur_price = row.get("Son Fiyat", pd.Series(dtype=float)).iat[0] \
+                        if "Son Fiyat" in row else None
 
-            market_cap = safe_float(row.get("Piyasa Değeri"))
-            if pd.isna(market_cap) or market_cap <= 0:
-                raise ValueError("piyasa değeri yok")
+            market_cap = row.get("Piyasa Değeri", pd.Series(dtype=float)).iat[0] \
+                        if "Piyasa Değeri" in row else None
 
-            price = safe_float(row.get("Son Fiyat"))
-            if pd.isna(price) or price <= 0:
-                raise ValueError("Fiyat değeri yok")
+            if cur_price and market_cap and market_cap > 0:
+                
+                shares_out = market_cap / cur_price                 # float shares
+                intrinsic_ps = intrinsic / shares_out               # per-share value
+                premium = (intrinsic_ps - cur_price) / cur_price
 
-            mos = (intrinsic - price) / intrinsic
-
-            records.append({
-                "Şirket": c,
-                "F-Skor": f_score,
-                "M-Skor": f"{round(m_score, 2)} ⚠️" if m_score > -2.22 else f"{round(m_score, 2)}",
-                "Graham": graham,
-                "Lynch":  lynch,
-                "İçsel Değer (Medyan)": intrinsic,
-                "Piyasa Değeri":        market_cap,
-                "MOS": mos,
-            })
+                records.append({
+                    "Şirket": c,
+                    "F-Skor": f_score,
+                    "M-Skor": f"{round(m_score, 2)} ⚠️" if m_score > -2.22 else f"{round(m_score, 2)}",
+                    "Graham": graham,
+                    "Lynch":  lynch,
+                    "İçsel Değer (Medyan)": intrinsic,
+                    "Piyasa Değeri":        market_cap,
+                    "MOS": premium,
+                })
 
         except ValueError as exc:
             msg = str(exc).lower()
@@ -163,7 +163,12 @@ def main():
         st.header("Tarama Ayarları")
         years   = st.slider("Projeksiyon Yılı", 3, 10, 5)
         n_sims  = st.number_input("Simülasyon Sayısı", 1000, 50000, 10000, step=1000, format="%d")
-        min_mos = st.slider("Minimum MOS (%)", 0, 100, 20) / 100
+
+        min_mos     = st.slider("Minimum MOS (%)",      0, 100, 20) / 100
+        min_fscore  = st.slider("Minimum F-Skor",       0,   9,  5)
+        min_graham  = st.slider("Minimum Graham Skoru", 0,   5,  2)
+        min_lynch   = st.slider("Minimum Lynch Skoru",  0,   3,  2)
+
         if st.button("Tarama Başlat"):
             st.session_state.scan = True
 
@@ -180,7 +185,12 @@ def main():
             st.info("Filtreni̇ geçecek şirket bulunamadı. MOS eşiğini düşür veya veri setini güncelle.")
             return
 
-        top15 = df[(df["MOS"] >= min_mos) & (df["Graham"] >= 2) & (df["Lynch"] >= 2)].head(15)
+        top15 = df[
+            (df["MOS"]    >= min_mos) &
+            (df["F-Skor"] >= min_fscore) &
+            (df["Graham"] >= min_graham) &
+            (df["Lynch"]  >= min_lynch)
+        ].head(15)
         st.subheader(f"En İyi {len(top15)} Hisse (MOS ≥ {min_mos:.0%})")
         st.dataframe(
             top15.style
