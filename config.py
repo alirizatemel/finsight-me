@@ -20,3 +20,13 @@ PERFORMANS_XLSX = DATA_DIR / "performans_log.xlsx"
 
 
 BENCHMARK_RETURN_PCT = 4.2
+
+
+PERIODS = [
+    "2023/12",
+    "2023/09",
+    "2023/06",
+    "2023/03",
+    "2022/12",
+    "2022/09",
+]
