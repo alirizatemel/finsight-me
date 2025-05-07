@@ -10,7 +10,7 @@ def load_financial_data(symbol: str, base_dir: Path = Path(COMPANIES_DIR)):
         raise FileNotFoundError(f"{path} not found")
     bilanco  = pd.read_excel(path, sheet_name="Bilanço")
     gelir    = pd.read_excel(path, sheet_name="Gelir Tablosu (Dönemsel)")
-    cashflow = pd.read_excel(path, sheet_name="Nakit Akış (Dönemsel)")
+    cashflow = pd.read_excel(path, sheet_name="Nakit Akış (Yıllıklan.)")
 
     for df in (bilanco, gelir, cashflow):
         df['Kalem'] = df['Kalem'].astype(str).str.strip()

@@ -25,17 +25,14 @@ def latest_common_period(balance, income, cashflow):
 params = st.query_params          # doğrudan Mapping[str, str]
 default_symbol = params.get("symbol", "").upper()
 
-
 @st.cache_data(show_spinner=False)
 def get_scores_cached(symbol, radar_row, balance, income, cashflow, curr, prev):
     return calculate_scores(symbol, radar_row, balance, income, cashflow, curr, prev)
-
 
 @st.cache_data(show_spinner=False)
 def get_financials(symbol: str):
     """Load balance, income, and cash‑flow sheets for a single ticker."""
     return load_financial_data(symbol)
-
 
 @st.cache_data(show_spinner=False)
 def get_radar() -> pd.DataFrame:
@@ -44,6 +41,25 @@ def get_radar() -> pd.DataFrame:
     df["Şirket"] = df["Şirket"].str.strip()
     return df
 
+def format_scores_for_clipboard(data: dict) -> str:
+    s = data["scores"]
+    lines = [
+        f"**Şirket:** {data['company']}",
+        f"**Dönem:** {data['periods']['current']}  (önceki: {data['periods']['previous']})",
+        "",
+        f"**Piotroski F‑Score:** {s['piotroski_card']}",
+        "\n".join(f"- {k}: {'✅' if v=='✅' else '❌'}" for k, v in s["piotroski_detail"].items()),
+        "",
+        f"**Beneish M‑Skor:** {s['beneish_card']} ({s['beneish']:+.2f})",
+        *[f"- {line}" for line in s["beneish_lines"]],
+        "",
+        f"**Graham Skoru:** {s['graham']} / 5",
+        *[f"- {line}" for line in s["graham_lines"]],
+        "",
+        f"**Peter Lynch Skoru:** {s['lynch']} / 3",
+        *[f"- {line}" for line in s["lynch_lines"]],
+    ]
+    return "\n".join(lines)
 
 def main():
     st.title("📈 Tek Hisse Finans Skor Kartı")
@@ -109,7 +125,7 @@ def main():
         tab_score, tab_fcf, tab_valuation, tab_raw = st.tabs(["📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", "🗂 Ham Veriler"])
 
         with tab_score:
-            show_company_scorecard(symbol, radar_row, curr, prev)
+            copy_details=show_company_scorecard(symbol, radar_row, curr, prev)
 
         with tab_fcf:
             st.subheader("FCF Detay Tablosu")
@@ -208,6 +224,16 @@ def main():
             st.expander("Bilanço").dataframe(balance)
             st.expander("Gelir Tablosu").dataframe(income)
             st.expander("Nakit Akış Tablosu").dataframe(cashflow)
+        # ------------------------------------------------------------------
+        # 📋 2) add the “Skorları Kopyala” button in your main() just after
+        #        the metrics are rendered (still inside the if st.session_state.analyze block)
+        # ------------------------------------------------------------------
+        with st.container():  # keeps things visually grouped
+            st.markdown(f"📋 Skor Kartı")
+            with st.expander("⬇️ kopyalamak için tıkla", expanded=False):
+                clip_text = format_scores_for_clipboard(copy_details)
+                # st.code comes with a built‑in copy icon since Streamlit 1.28
+                st.code(clip_text, language="markdown")
 
 if __name__ == "__main__":
     main()
