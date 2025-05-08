@@ -84,8 +84,8 @@ def import_excel_to_postgres(company):
         df = sheets[sheet_name]
         table_mapping = {
             "bilanço": "balance",
-            "gelir tablosu (dönemsel)": "income",
-            "nakit akış (dönemsel)": "cashflow",
+            "gelir tablosu (çeyreklik)": "income",
+            "nakit akış (çeyreklik)": "cashflow",
         }
 
         sheet_key = sheet_name.lower().strip()

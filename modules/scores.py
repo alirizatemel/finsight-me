@@ -10,6 +10,7 @@ import streamlit as st # type: ignore
 from typing import Optional 
 from modules.data_loader import load_financial_data
 from modules.financial_snapshot import build_snapshot
+from modules.ratios import calculate_roa_ttm
 
 def monte_carlo_dcf_simple(
     last_fcf: float,
@@ -67,7 +68,8 @@ def calculate_piotroski_f_score(row, balance, income, curr, prev):
     detail_str = {}
 
     detail["Net Kar > 0"] = int(net_profit > 0)
-    detail["ROA > 0"] = int((net_profit / total_assets) > 0 if total_assets else 0)
+    roa = calculate_roa_ttm(income, balance, period_order)
+    detail["ROA > 0"] = int(roa > 0)
     detail["Nakit Akışı > 0"] = int(operating_cash_flow > 0)
     detail["Nakit Akışı > Net Kar"] = int(operating_cash_flow > net_profit)
     f_score += sum(detail.values())
@@ -578,7 +580,6 @@ def show_company_scorecard(company, row, current_period, previous_period):
         st.error(f"⛔ Dosya bulunamadı: {e}")
     except Exception as e:
         st.error(f"⚠️ Hata oluştu: {e}")
-
 
 def monte_carlo_dcf_jump_diffusion(
     last_fcf,
