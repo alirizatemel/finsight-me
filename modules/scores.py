@@ -555,10 +555,54 @@ def show_company_scorecard(company, row, current_period, previous_period):
         with st.expander("🧾 Peter Lynch Kriterleri", expanded=False):
             for line in scores.get("lynch_lines", []):
                 st.markdown(line)
-
+        return {
+            "company": company,
+            "periods": {
+                "current": current_period,
+                "previous": previous_period,
+            },
+            "scores": {
+                "piotroski": scores["f_score"],
+                "piotroski_card": scores["f_karne"],
+                "piotroski_detail": scores.get("detail", {}),
+                "beneish": scores["m_skor"],
+                "beneish_card": scores["m_karne"],
+                "beneish_lines": scores.get("m_lines", []),
+                "graham": scores["graham_skor"],
+                "graham_lines": scores.get("graham_lines", []),
+                "lynch": scores["lynch_skor"],
+                "lynch_lines": scores.get("lynch_lines", []),
+            }
+        }
     except FileNotFoundError as e:
         st.error(f"⛔ Dosya bulunamadı: {e}")
     except Exception as e:
         st.error(f"⚠️ Hata oluştu: {e}")
 
 
+def monte_carlo_dcf_jump_diffusion(
+    last_fcf,
+    forecast_years=5,
+    n_sims=10000,
+    wacc_mu=0.15,
+    g_mu=0.04,
+    mu=0.10,
+    sigma=0.25,
+    lambda_=0.1,       # sıçrama yoğunluğu
+    jump_mu=0.05,      # ortalama sıçrama büyüklüğü
+    jump_sigma=0.10    # sıçrama oynaklığı
+):
+    results = []
+    for _ in range(n_sims):
+        fcf = last_fcf
+        cashflows = []
+        for t in range(1, forecast_years + 1):
+            growth = np.random.normal(mu, sigma)
+            jump_occurs = np.random.poisson(lambda_)
+            jump = jump_occurs * np.random.normal(jump_mu, jump_sigma)
+            fcf *= (1 + growth + jump)
+            cashflows.append(fcf / ((1 + wacc_mu) ** t))
+        terminal = fcf * (1 + g_mu) / (wacc_mu - g_mu)
+        cashflows.append(terminal / ((1 + wacc_mu) ** forecast_years))
+        results.append(sum(cashflows))
+    return results

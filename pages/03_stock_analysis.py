@@ -10,7 +10,8 @@ from modules.scores import (
     fcf_detailed_analysis,
     fcf_detailed_analysis_plot,
     fcf_yield_time_series,
-    monte_carlo_dcf_simple
+    monte_carlo_dcf_simple,
+    monte_carlo_dcf_jump_diffusion
 )
 from config import RADAR_XLSX
 
@@ -183,6 +184,12 @@ def main():
                 n_sims=int(n_sims),
                 wacc_mu=wacc_mu, g_mu=g_mu,
             )
+            # sim_vals = monte_carlo_dcf_jump_diffusion(
+            #     last_fcf,
+            #     forecast_years=years,
+            #     n_sims=int(n_sims),
+            #     wacc_mu=wacc_mu, g_mu=g_mu,
+            # )
 
             # Sonuçları göster
             intrinsic = np.median(sim_vals)
@@ -218,7 +225,6 @@ def main():
             ax.set_ylabel("Sıklık")
             ax.set_title(f"{n_sims:,} Senaryoda Değer Dağılımı")
             st.pyplot(fig)
-
 
         with tab_raw:
             st.expander("Bilanço").dataframe(balance)
