@@ -10,21 +10,18 @@ Finansal Radar altyapısını temel alarak, her BIST şirketi için:
 
 import streamlit as st  # type: ignore
 import pandas as pd
-import numpy as np
 from streamlit import column_config as cc  # type: ignore
-import traceback 
 from datetime import datetime
 from modules.data_loader import load_financial_data
+from modules.scoring.beneish import BeneishScorer
+from modules.scoring.graham import GrahamScorer
+from modules.scoring.lynch import LynchScorer
+from modules.scoring.piotroski import PiotroskiScorer
 from modules.scores import (
-    calculate_piotroski_f_score,
-    calculate_beneish_m_score,
-    graham_score_card,
-    peter_lynch_score_card,
-    monte_carlo_dcf_simple,
-    period_order,
-    fcf_detailed_analysis
+    period_order
 )
-from modules.utils_db import engine, scores_table_empty, load_scores_df, save_scores_df
+from modules.utils_db import scores_table_empty, load_scores_df, save_scores_df
+from modules.scanner import run_scan 
 from config import RADAR_XLSX
 
 
@@ -53,104 +50,6 @@ def load_radar() -> pd.DataFrame:
 def get_financials(company: str):
     """(balance, income, cash) dataframes."""
     return load_financial_data(company)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Ana tarama fonksiyonu
-# ──────────────────────────────────────────────────────────────────────────────
-
-def run_scan(radar: pd.DataFrame, forecast_years: int, n_sims: int):
-    records, logs = [], []
-    counters = {"dönem": 0, "fcf": 0, "piyasa": 0, "diğer": 0}
-
-    companies = radar["Şirket"].dropna().unique()
-    total = len(companies)
-    progress = st.progress(0.0, text="Tarama başlıyor…")
-
-    for i, c in enumerate(companies, 1):
-        try:
-            row = radar[radar["Şirket"] == c]
-            bal, inc, cash = get_financials(c)
-
-            # 🔹 ortak dönem seçimi
-            periods = latest_common_period(bal, inc, cash)
-            if len(periods) < 2:
-                raise ValueError("ortak dönem yok")
-            curr, prev = periods[:2]
-
-            # 🔹 temel skorlar
-            f_score, _ = calculate_piotroski_f_score(row, bal, inc, curr, prev)
-            m_score    = calculate_beneish_m_score(c, bal, inc, cash, curr, prev)
-            graham, *_ = graham_score_card(row)
-            lynch , *_ = peter_lynch_score_card(row)
-
-            # Son 12 ay FCF’i çek (yıllıklandırılmış)
-            df_fcf = fcf_detailed_analysis(c, row)
-            if df_fcf is None or df_fcf.empty:
-                raise ValueError("FCF verileri eksik.")
-
-            # --- trailing-12-month FCF (TTM) ------------------------------------
-            if len(df_fcf) >= 4:
-                last_fcf = df_fcf["FCF"].iloc[-4:].sum()   # TTM: son 4 çeyrek toplamı
-            else:
-                last_fcf = df_fcf["FCF"].iloc[-1]          # fallback: tek dönem
-
-            if last_fcf <= 0:
-                raise ValueError("Son FCF negatif veya sıfır, değerleme anlamsız.")
-
-            intrinsic = np.median(
-                monte_carlo_dcf_simple(last_fcf, forecast_years=forecast_years, n_sims=n_sims)
-            )
-            
-            # --- convert EV → intrinsic value per share -------------------------------
-            cur_price = row.get("Son Fiyat", pd.Series(dtype=float)).iat[0] \
-                        if "Son Fiyat" in row else None
-
-            market_cap = row.get("Piyasa Değeri", pd.Series(dtype=float)).iat[0] \
-                        if "Piyasa Değeri" in row else None
-
-            if cur_price and market_cap and market_cap > 0:
-                
-                shares_out = market_cap / cur_price                 # float shares
-                intrinsic_ps = intrinsic / shares_out               # per-share value
-                premium = (intrinsic_ps - cur_price) / cur_price
-
-                records.append({
-                    "Şirket": c,
-                    "F-Skor": f_score,
-                    "M-Skor": f"{round(m_score, 2)} ⚠️" if m_score > -2.22 else f"{round(m_score, 2)}",
-                    "Graham": graham,
-                    "Lynch":  lynch,
-                    "İçsel Değer (Medyan)": intrinsic,
-                    "Piyasa Değeri":        market_cap,
-                    "MOS": premium,
-                })
-
-        except ValueError as exc:
-            msg = str(exc).lower()
-            if "dönem" in msg:
-                counters["dönem"] += 1
-            elif "fcf" in msg:
-                counters["fcf"] += 1
-            elif "piyasa" in msg:
-                counters["piyasa"] += 1
-            else:
-                counters["diğer"] += 1
-            logs.append(f"{c}: {exc}\n↳ {traceback.format_exc(limit=2)}")  # <-- ek
-        except Exception as exc:
-            counters["diğer"] += 1
-            logs.append(f"{c}: {exc}")
-        finally:
-            progress.progress(i / total, text=f"{i}/{total} tarandı…")
-
-    progress.empty()
-
-    df = pd.DataFrame.from_records(records)
-    if not df.empty:
-        df["timestamp"] = datetime.now()
-    if "MOS" in df.columns:
-        df.sort_values("MOS", ascending=False, inplace=True)
-
-    return df, logs, counters
 
 # ──────────────────────────────────────────────────────────────────────────────
 # UI
@@ -183,14 +82,14 @@ def main():
                 st.session_state.force_refresh = True    # mutlaka hesapla
 
     if st.session_state.get("scan"):
-        if scores_table_empty() or st.session_state.get("force_refresh"):
+        if scores_table_empty("radar_scores") or st.session_state.get("force_refresh"):
             st.info("📊 Skorlar hesaplanıyor, veritabanı güncelleniyor…")
             df, logs, counters = run_scan(radar, years, int(n_sims))
             if not df.empty:
-                save_scores_df(df)                     # TABLOYU YENİLE
+                save_scores_df(df,"radar_scores")                     # TABLOYU YENİLE
         else:
             st.success("📁 Skorlar veritabanından yüklendi.")
-            df = load_scores_df()
+            df = load_scores_df(table="radar_scores")
             logs, counters = [], {}
 
         # Loglar

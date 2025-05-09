@@ -11,6 +11,10 @@ from typing import Optional
 from modules.data_loader import load_financial_data
 from modules.financial_snapshot import build_snapshot
 from modules.ratios import calculate_roa_ttm
+from modules.scoring.beneish import BeneishScorer
+from modules.scoring.graham import GrahamScorer
+from modules.scoring.lynch import LynchScorer
+from modules.scoring.piotroski import PiotroskiScorer
 
 def monte_carlo_dcf_simple(
     last_fcf: float,
@@ -59,227 +63,12 @@ def monte_carlo_dcf_simple(
 
     return pv_fcfs + pv_tv
 
-def calculate_piotroski_f_score(row, balance, income, curr, prev):
-    net_profit = scalar(row["Net Dönem Karı"])
-    operating_cash_flow = scalar(row["İşletme Faaliyetlerinden Nakit Akışları"])
-    f_score = 0
-    detail = {}
-    detail_str = {}
-
-    detail["Net Kar > 0"] = int(net_profit > 0)
-    roa = calculate_roa_ttm(income, balance, period_order)
-    detail["ROA > 0"] = int(roa > 0)
-    detail["Nakit Akışı > 0"] = int(operating_cash_flow > 0)
-    detail["Nakit Akışı > Net Kar"] = int(operating_cash_flow > net_profit)
-    f_score += sum(detail.values())
-
-    snap_curr = build_snapshot(balance, income, None, period=curr)
-    snap_prev = build_snapshot(balance, income, None, period=prev)
-
-    if None not in (snap_curr.short_term_liabilities, snap_curr.long_term_liabilities, snap_curr.total_assets, snap_prev.short_term_liabilities, snap_prev.long_term_liabilities, snap_prev.total_assets):
-        leverage_ratio_curr = (snap_curr.short_term_liabilities + snap_curr.long_term_liabilities) / snap_curr.total_assets
-        leverage_ratio_prev = (snap_prev.short_term_liabilities + snap_prev.long_term_liabilities) / snap_prev.total_assets
-        detail["Borç Oranı Azalmış"] = int(leverage_ratio_curr < leverage_ratio_prev)
-        f_score += detail["Borç Oranı Azalmış"]
-    else:
-        detail["Borç Oranı Azalmış"] = 0
-
-    if None not in (snap_curr.current_assets, snap_curr.short_term_liabilities, snap_prev.current_assets, snap_prev.short_term_liabilities):
-        snap_curr.current_ratio = snap_curr.current_assets / snap_curr.short_term_liabilities
-        snap_prev.current_ratio = snap_prev.current_assets / snap_prev.short_term_liabilities
-        detail["Cari Oran Artmış"] = int(snap_curr.current_ratio > snap_prev.current_ratio)
-        f_score += detail["Cari Oran Artmış"]
-    else:
-        detail["Cari Oran Artmış"] = 0
-
-    detail["Öz Kaynak Artmış"] = int(snap_curr.equity >= snap_prev.equity) if snap_curr.equity and snap_prev.equity else 0
-    f_score += detail["Öz Kaynak Artmış"]
-
-    if None not in (snap_curr.gross_profit, snap_prev.gross_profit, snap_curr.revenue, snap_prev.revenue):
-        detail["Brüt Kar Marjı Artmış"] = int((snap_curr.gross_profit / snap_curr.revenue) > (snap_prev.gross_profit / snap_prev.revenue))
-        detail["Varlık Devir Hızı Artmış"] = int((snap_curr.revenue / snap_curr.total_assets) > (snap_prev.revenue / snap_prev.total_assets))
-        f_score += detail["Brüt Kar Marjı Artmış"] + detail["Varlık Devir Hızı Artmış"]
-    else:
-        detail["Brüt Kar Marjı Artmış"] = 0
-        detail["Varlık Devir Hızı Artmış"] = 0
-
-    # Emojili gösterim (ayrı sözlükte)
-    emojis = {
-        "Net Kar > 0": "🟢",
-        "ROA > 0": "📈",
-        "Nakit Akışı > 0": "💸",
-        "Nakit Akışı > Net Kar": "🔄",
-        "Borç Oranı Azalmış": "📉",
-        "Cari Oran Artmış": "💧",
-        "Öz Kaynak Artmış": "🏦",
-        "Brüt Kar Marjı Artmış": "📊",
-        "Varlık Devir Hızı Artmış": "🔁",
-    }
-
-    for key, val in detail.items():
-        detail_str[f"{emojis.get(key, '')} {key}"] = "✅" if val else "❌"
-
-    return f_score, detail_str
-
-def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):
-    try:
-        #Gerekli kalemleri al
-        snap_curr = build_snapshot(balance, income, cashflow, period=curr)
-        snap_prev = build_snapshot(balance, income, cashflow, period=prev)
-
-        # 1. DSRI
-        DSRI = safe_divide(safe_divide(snap_curr.trade_receivables, snap_curr.sales), safe_divide(snap_prev.trade_receivables, snap_prev.sales))
-        
-        # 2. GMI
-        GMI = safe_divide(safe_divide(snap_prev.sales - snap_prev.cogs, snap_prev.sales),
-                          safe_divide(snap_curr.sales - snap_curr.cogs, snap_curr.sales))
-        
-        # 3. AQI
-        aqi_curr = 1 - safe_divide(snap_curr.current_assets + snap_curr.pp_e, snap_curr.total_assets)
-        aqi_prev = 1 - safe_divide(snap_prev.current_assets + snap_prev.pp_e, snap_prev.total_assets)
-        AQI = safe_divide(aqi_curr, aqi_prev)
-
-        # 4. SGI
-        SGI = safe_divide(snap_curr.sales, snap_prev.sales)
-        
-        # 5. DEPI
-        depi_curr = safe_divide(snap_curr.depreciation, snap_curr.depreciation + snap_curr.pp_e)
-        depi_prev = safe_divide(snap_prev.depreciation, snap_prev.depreciation + snap_prev.pp_e)
-        DEPI = safe_divide(depi_prev, depi_curr)
-         
-        # 6. SGAI
-        sgai_numerator = safe_divide((snap_curr.g_and_a_exp + snap_curr.marketing_exp), snap_curr.sales)
-        sgai_denominator = safe_divide((snap_prev.g_and_a_exp + snap_prev.marketing_exp), snap_prev.sales)
-        SGAI = safe_divide(sgai_numerator, sgai_denominator)
-
-        
-        # 7. TATA
-        TATA = safe_divide(snap_curr.net_profit - snap_curr.operating_cash_flow, snap_curr.total_assets) if None not in (
-            snap_curr.net_profit, snap_curr.operating_cash_flow, snap_curr.total_assets) else 0
-        
-        # 8. LVGI
-        LVGI = safe_divide(snap_curr.total_liabilities / snap_curr.total_assets, snap_prev.total_liabilities / snap_prev.total_assets)
-
-        m_score = (
-            -4.84 + 0.92 * DSRI + 0.528 * GMI + 0.404 * AQI + 0.892 * SGI +
-            0.115 * DEPI - 0.172 * SGAI + 4.679 * TATA - 0.327 * LVGI
-        )
-
-        return round(m_score, 2)
-
-    except Exception as e:
-        print(f"{company} Beneish M-Score hesaplanırken hata: {e}")
-        return None
-
-def peter_lynch_score_card(row):
-    row = row.iloc[0]
-    score = 0
-    lines = []
-
-    try:
-        market_cap = safe_float(row.get("Piyasa Değeri"))
-        operating_cf = safe_float(row.get("İşletme Faaliyetlerinden Nakit Akışları"))
-        fcf = safe_float(row.get("Yıllıklandırılmış Serbest Nakit Akışı"))
-
-        # FCF Verimi
-        if pd.notnull(fcf) and pd.notnull(market_cap) and market_cap > 0:
-            fcf_yield = fcf / market_cap
-            passed = fcf_yield >= 0.05
-            lines.append(f"- FCF Verimi: {fcf_yield:.2%} → {'✅ Güçlü' if passed else '❌ Zayıf'}")
-            score += int(passed)
-        else:
-            lines.append("- FCF veya piyasa değeri eksik")
-
-        # Nakit Akışı
-        if pd.notnull(operating_cf):
-            passed = operating_cf > 0
-            lines.append(f"- İşletme Nakit Akışı: {operating_cf:.0f} → {'✅ Pozitif' if passed else '❌ Negatif'}")
-            score += int(passed)
-        else:
-            lines.append("- İşletme Nakit Akışı eksik")
-
-        # PD/FCF
-        if pd.notnull(market_cap) and pd.notnull(fcf) and fcf > 0:
-            pd_fcf = market_cap / fcf
-            passed = pd_fcf <= 15
-            lines.append(f"- PD/FCF = {pd_fcf:.1f} → {'✅ Ucuz' if passed else '❌ Pahalı'}")
-            score += int(passed)
-        else:
-            lines.append("- PD/FCF hesaplanamıyor")
-
-    except Exception as e:
-        lines.append(f"⚠️ Hata: {e}")
-
-    description = f"Peter Lynch Skoru: {score} / 3"
-    return score, description, lines
-
 def period_order(period_str):
     try:
         year, month = period_str.split("/")
         return pd.to_datetime(f"{year}-{month}-01")
     except:
         return pd.NaT
-
-def graham_score(row):
-    if not row.empty:
-        row = row.iloc[0]
-    score = 0
-    if pd.notnull(row['F/K']) and row['F/K'] < 15:
-        score += 1
-    if pd.notnull(row['PD/DD']) and row['PD/DD'] < 1.5:
-        score += 1
-    if pd.notnull(row['Cari Oran']) and 2 < row['Cari Oran'] < 100:
-        score += 1
-    if pd.notnull(row['İşletme Faaliyetlerinden Nakit Akışları']) and row['İşletme Faaliyetlerinden Nakit Akışları'] > 0:
-        score += 1
-    if pd.notnull(row['Yıllıklandırılmış Serbest Nakit Akışı']) and row['Yıllıklandırılmış Serbest Nakit Akışı'] > 0:
-        score += 1
-    return score
-
-def graham_score_card(row):
-    row = row.iloc[0]
-    score = 0
-    lines = []
-
-    kriterler = [
-        ("F/K", round(row.get("F/K"),2), lambda x: x < 15, "F/K < 15"),
-        ("PD/DD", round(row.get("PD/DD"),2), lambda x: x < 1.5, "PD/DD < 1.5"),
-        ("Cari Oran", round(row.get("Cari Oran"),2), lambda x: 2 < x < 100, "2 < Cari Oran < 100"),
-        ("Nakit Akışı", row.get("İşletme Faaliyetlerinden Nakit Akışları"), lambda x: x > 0, "İşletme Nakit Akışı > 0"),
-        ("Serbest Nakit Akışı", row.get("Yıllıklandırılmış Serbest Nakit Akışı"), lambda x: x > 0, "Yıllıklandırılmış FCF > 0")
-    ]
-
-    for label, value, condition, desc in kriterler:
-        if pd.notnull(value):
-            passed = condition(value)
-            lines.append(f"- {label} = {value} → {'✅' if passed else '❌'} ({desc})")
-            score += int(passed)
-        else:
-            lines.append(f"- {label} verisi eksik")
-
-    description = f"Graham Skoru: {score} / 5"
-    return score, description, lines
-
-def m_skor_karne_yorum(m_skor):
-    if m_skor is None:
-        return "M-Skor verisi eksik", ["❌ M-Skor hesaplanamadı"]
-
-    passed = m_skor < -2.22
-    yorum = "✅ Düşük risk (finansal manipülasyon ihtimali düşük)" if passed else "⚠️ Yüksek risk (bozulma/makyaj riski)"
-    return f"{m_skor:.2f}", [f"M-Skor = {m_skor:.2f} → {yorum}"]
-
-def f_skor_karne_yorum(f_score):
-    if f_score is None:
-        return "F-Skor verisi eksik"
-    
-    yorum = f"F-Skor: {f_score} → "
-    if f_score >= 7:
-        yorum += "✅ Sağlam – Finansal göstergeler güçlü"
-    elif 4 <= f_score <= 6:
-        yorum += "🟡 Orta seviye – Gelişme sinyalleri izlenmeli"
-    else:
-        yorum += "❌ Zayıf – Finansal sağlık düşük, temkinli yaklaşılmalı"
-    return yorum
 
 def fcf_yield_time_series(company, row):
     try:
@@ -463,18 +252,16 @@ def fcf_detailed_analysis_plot(company, row):
 
 def calculate_scores(company, row, balance, income, cashflow, current_period, previous_period):
     # 1. Piotroski F-Skor
-    f_score, detail = calculate_piotroski_f_score(row, balance, income, current_period, previous_period)
-    f_karne = f_skor_karne_yorum(f_score)
+    f_score, f_karne, f_detail = PiotroskiScorer(row, balance, income, current_period, previous_period).calculate()
 
     # 2. Beneish M-Skor
-    m_skor = calculate_beneish_m_score(company, balance, income, cashflow, current_period, previous_period)
-    m_karne, m_lines = m_skor_karne_yorum(m_skor)
+    m_skor, m_karne, m_lines  = BeneishScorer(company, balance, income, cashflow, current_period, previous_period).calculate()
 
     # 3. Graham Skoru
-    graham_skor, graham_karne, graham_lines = graham_score_card(row)
+    graham_skor, graham_karne, graham_lines = GrahamScorer(row).calculate()
 
     # 4. Peter Lynch Skoru
-    lynch_skor, lynch_karne, lynch_lines = peter_lynch_score_card(row)
+    lynch_skor, lynch_karne, lynch_lines = LynchScorer(row).calculate()
 
     return {
         "f_score": f_score,
@@ -488,7 +275,7 @@ def calculate_scores(company, row, balance, income, cashflow, current_period, pr
         "lynch_skor": lynch_skor,
         "lynch_karne": lynch_karne,
         "lynch_lines": lynch_lines,
-        "detail": detail
+        "detail": f_detail
     }
 
 def generate_report(company, scores, show_details=False):

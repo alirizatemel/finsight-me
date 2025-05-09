@@ -1,11 +1,10 @@
 import streamlit as st # type: ignore
 import pandas as pd
 from modules.data_loader import load_financial_data
-# from modules.scores import calculate_piotroski_f_score, calculate_beneish_m_score, peter_lynch_score_card, graham_score
-from modules.scoring.beneish import BeneishScorer
-from modules.scoring.graham import GrahamScorer
-from modules.scoring.lynch import LynchScorer
-from modules.scoring.piotroski import PiotroskiScorer
+from modules.scanner import run_scan                 # NEW (shared scanner)
+from modules.utils_db import (
+    scores_table_empty, load_scores_df, save_scores_df
+)
 from streamlit import column_config as cc # type: ignore
 from config import RADAR_XLSX
 
@@ -34,60 +33,6 @@ def link_to_analysis(ticker: str) -> str:
     (Markdown yerine <a href=…> kullanıyoruz.)
     """
     return f'<a href="/stock_analysis?symbol={ticker}" target="_self">{ticker}</a>'
-
-def build_score_table(progress_cb=None):
-    radar = load_radar()
-    companies = radar["Şirket"].unique()
-    results, logs = [], []
-    total = len(companies)
-
-    for i, c in enumerate(companies, 1):
-        row = radar[radar["Şirket"] == c]
-
-        f_skor = m_skor = None
-        try:
-            bal, inc, cf = get_financials(c)
-
-            # 🔹 şirket bazlı dönem seçimi
-            cols = [col for col in bal.columns if "/" in col]
-            cols = sorted(cols, key=period_sort_key, reverse=True)
-            if len(cols) >= 2:
-                curr, prev = cols[:2]
-                # f_skor, _ = calculate_piotroski_f_score(row, bal, inc, curr, prev)
-                # m_skor    = calculate_beneish_m_score(c, bal, inc, cf, curr, prev)
-                f_skor, _, _ = PiotroskiScorer(row, bal, inc, curr, prev).calculate()
-                m_skor, _, _ = BeneishScorer(c, bal, inc, cf, curr, prev).calculate()
-            else:
-                logs.append(f"ℹ️ {c}: <2 dönem — F/M atlandı/")
-                            
-        except FileNotFoundError:
-            logs.append(f"ℹ️ {c}: Excel yok — F/M atlandı")
-        except Exception as e:
-            logs.append(f"⚠️ {c}: {e}")
-
-        # lynch, *_ = peter_lynch_score_card(row)
-        # graham     = graham_score(row)
-        
-        g_score, *_ = GrahamScorer(row).calculate()
-        l_score, *_ = LynchScorer(row).calculate()
-
-        results.append({
-            "Şirket"       : c,
-            "F-Skor"       : f_skor,
-            "M-Skor"       : m_skor,
-            "L-Skor"       : l_score,
-            "Graham Skoru" : g_score,
-        })
-
-
-        if progress_cb:
-            progress_cb.progress(i / total)
-
-    df = pd.DataFrame(results)
-    for col in ["F-Skor", "M-Skor", "L-Skor", "Graham Skoru"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df, logs
-
 
 st.title("📊 Bilanço Skorları Toplu Analiz")
 
@@ -163,17 +108,34 @@ with st.sidebar.expander("Filtreler", expanded=True):
 if reset:
     st.session_state.pop("score_df", None)
 
-# --- Build or retrieve score table ---------------------------------------
+# -------------------------------------------------------------------------
+# DB‑first logic (same UX as Trap Radar)
+# -------------------------------------------------------------------------
+with st.sidebar:
+    st.header("Veri Kaynağı")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Veritabanından Yükle"):
+            st.session_state.scan = True
+            st.session_state.force_refresh = False
+    with col2:
+        if st.button("Skorları Yenile"):
+            st.session_state.scan = True
+            st.session_state.force_refresh = True
 
-if "score_df" not in st.session_state:
-    with st.spinner("Skorlar hesaplanıyor…"):
-        prog = st.progress(0)
-        score_df, logs = build_score_table(prog)
-        st.session_state["score_df"] = score_df
-        st.session_state["logs"] = logs
+if st.session_state.get("scan"):
+    if scores_table_empty("radar_scores") or st.session_state.get("force_refresh"):
+        st.info("📊 Skorlar hesaplanıyor, veritabanı güncelleniyor…")
+        df_scan, logs, _ = run_scan(df_radar)   # <‑‑ lightweight scan
+        save_scores_df(df_scan, table="radar_scores")
+    else:
+        st.success("📁 Skorlar veritabanından yüklendi.")
+        df_scan = load_scores_df(table="radar_scores")
+        logs = []
 else:
-    score_df = st.session_state["score_df"]
-    logs = st.session_state["logs"]
+    st.stop()
+
+score_df = df_scan     # rename for clarity below
 
 
 # Skor tablosunu göster
@@ -181,16 +143,17 @@ score_df["Link"]     = "/stock_analysis?symbol=" + score_df["Şirket"]
 
 
 # Skor kolonlarını numeriğe çevir, olmayanlar NaN olur
-for col in ["F-Skor", "M-Skor", "L-Skor", "Graham Skoru"]:
+for col in ["F-Skor", "M-Skor", "Lynch", "Graham", "MOS"]:
     score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
+score_df["MOS"] = score_df["MOS"]*100
 # --- Uygula / sıfırla filtre --------------------------------------------
 if apply:
     filtered_df = score_df[
         (score_df["F-Skor"] >= f_min) & (score_df["F-Skor"] <= f_max) &
         (score_df["M-Skor"] >= m_min) & (score_df["M-Skor"] <= m_max) &
-        (score_df["L-Skor"] >= l_min) & (score_df["L-Skor"] <= l_max) &
-        (score_df["Graham Skoru"] >= g_min) & (score_df["Graham Skoru"] <= g_max)
+        (score_df["Lynch"] >= l_min) & (score_df["Lynch"] <= l_max) &
+        (score_df["Graham"] >= g_min) & (score_df["Graham"] <= g_max)
     ]
     st.markdown(f"**🔎 Filtrelenmiş Şirket Sayısı:** {len(filtered_df)}")
     #st.dataframe(filtered_df.sort_values("F-Skor", ascending=False), use_container_width=True)
@@ -201,7 +164,11 @@ if apply:
                 label="Link",    # hangi kolon URL’yi tutuyor
                 display_text="Analize Git",
                 #target="_self",     # aynı sekmede aç
-            )
+            ),
+            "MOS": cc.NumberColumn(
+                label="MOS",
+                format="%.1f%%", 
+            ),
         },
         hide_index=True,
         use_container_width=True,
@@ -218,7 +185,11 @@ else:
                 label="Link",    # hangi kolon URL’yi tutuyor
                 display_text="Analize Git",
                 #target="_self",     # aynı sekmede aç
-            )
+            ),
+            "MOS": cc.NumberColumn(
+                label="MOS",
+                format="%.1f%%", 
+            ),
         },
         hide_index=True,
         use_container_width=True,

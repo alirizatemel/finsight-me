@@ -90,6 +90,7 @@ class PiotroskiScorer:
             self.row, self.balance, self.income, self.curr, self.prev
         )
         summary = f_skor_karne_yorum(f_score)
+        
         return f_score, summary, detail
     
 

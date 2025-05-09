@@ -50,7 +50,15 @@ def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):
     except Exception as e:
         print(f"{company} Beneish M-Score hesaplanırken hata: {e}")
         return None
-    
+
+def m_skor_karne_yorum(m_skor):
+    if m_skor is None:
+        return "M-Skor verisi eksik", ["❌ M-Skor hesaplanamadı"]
+
+    passed = m_skor < -2.22
+    yorum = "✅ Düşük risk (finansal manipülasyon ihtimali düşük)" if passed else "⚠️ Yüksek risk (bozulma/makyaj riski)"
+    return f"{m_skor:.2f}", [f"M-Skor = {m_skor:.2f} → {yorum}"]
+   
 class BeneishScorer:
     def __init__(self, company, balance, income, cashflow, curr, prev):
         self.company = company
@@ -61,9 +69,9 @@ class BeneishScorer:
         self.prev = prev
 
     def calculate(self):
-        from modules.scores import calculate_beneish_m_score, m_skor_karne_yorum
         m_score = calculate_beneish_m_score(
             self.company, self.balance, self.income, self.cashflow, self.curr, self.prev
         )
         karne, lines = m_skor_karne_yorum(m_score)
+        
         return m_score, karne, lines
