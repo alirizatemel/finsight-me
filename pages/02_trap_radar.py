@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 from streamlit import column_config as cc  # type: ignore
 import traceback 
-from modules.utils import safe_float
+from datetime import datetime
 from modules.data_loader import load_financial_data
 from modules.scores import (
     calculate_piotroski_f_score,
@@ -24,6 +24,7 @@ from modules.scores import (
     period_order,
     fcf_detailed_analysis
 )
+from modules.utils_db import engine, scores_table_empty, load_scores_df, save_scores_df
 from config import RADAR_XLSX
 
 
@@ -144,6 +145,8 @@ def run_scan(radar: pd.DataFrame, forecast_years: int, n_sims: int):
     progress.empty()
 
     df = pd.DataFrame.from_records(records)
+    if not df.empty:
+        df["timestamp"] = datetime.now()
     if "MOS" in df.columns:
         df.sort_values("MOS", ascending=False, inplace=True)
 
@@ -164,16 +167,31 @@ def main():
         years   = st.slider("Projeksiyon Yılı", 3, 10, 5)
         n_sims  = st.number_input("Simülasyon Sayısı", 1000, 50000, 10000, step=1000, format="%d")
 
-        min_mos     = st.slider("Minimum MOS (%)",      0, 100, 20) / 100
+        min_mos     = st.slider("Minimum MOS (%)",      -50, 100, 20) / 100
         min_fscore  = st.slider("Minimum F-Skor",       0,   9,  5)
         min_graham  = st.slider("Minimum Graham Skoru", 0,   5,  2)
         min_lynch   = st.slider("Minimum Lynch Skoru",  0,   3,  2)
 
-        if st.button("Tarama Başlat"):
-            st.session_state.scan = True
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Veritabanından Yükle"):
+                st.session_state.scan = True
+                st.session_state.force_refresh = False   # sadece oku
+        with col2:
+            if st.button("Skorları Yenile"):
+                st.session_state.scan = True
+                st.session_state.force_refresh = True    # mutlaka hesapla
 
     if st.session_state.get("scan"):
-        df, logs, counters = run_scan(radar, years, int(n_sims))
+        if scores_table_empty() or st.session_state.get("force_refresh"):
+            st.info("📊 Skorlar hesaplanıyor, veritabanı güncelleniyor…")
+            df, logs, counters = run_scan(radar, years, int(n_sims))
+            if not df.empty:
+                save_scores_df(df)                     # TABLOYU YENİLE
+        else:
+            st.success("📁 Skorlar veritabanından yüklendi.")
+            df = load_scores_df()
+            logs, counters = [], {}
 
         # Loglar
         with st.expander(f"🪵 Loglar ({len(logs)})"):
@@ -190,7 +208,7 @@ def main():
             (df["F-Skor"] >= min_fscore) &
             (df["Graham"] >= min_graham) &
             (df["Lynch"]  >= min_lynch)
-        ].head(15)
+        ].head(50)
         st.subheader(f"En İyi {len(top15)} Hisse (MOS ≥ {min_mos:.0%})")
         st.dataframe(
             top15.style
@@ -203,6 +221,9 @@ def main():
                  .background_gradient(subset=["MOS"], cmap="RdYlGn")
         )
         st.bar_chart(top15.set_index("Şirket")["MOS"])
+        if "timestamp" in df.columns and not df.empty:
+            last_upd = pd.to_datetime(df["timestamp"]).max()
+            st.caption(f"🕑 Son güncelleme: {last_upd:%Y‑%m‑%d %H:%M}")
 
 if __name__ == "__main__":
     main()

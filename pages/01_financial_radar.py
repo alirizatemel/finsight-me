@@ -1,7 +1,11 @@
 import streamlit as st # type: ignore
 import pandas as pd
 from modules.data_loader import load_financial_data
-from modules.scores import calculate_piotroski_f_score, calculate_beneish_m_score, peter_lynch_score_card, graham_score
+# from modules.scores import calculate_piotroski_f_score, calculate_beneish_m_score, peter_lynch_score_card, graham_score
+from modules.scoring.beneish import BeneishScorer
+from modules.scoring.graham import GrahamScorer
+from modules.scoring.lynch import LynchScorer
+from modules.scoring.piotroski import PiotroskiScorer
 from streamlit import column_config as cc # type: ignore
 from config import RADAR_XLSX
 
@@ -49,8 +53,10 @@ def build_score_table(progress_cb=None):
             cols = sorted(cols, key=period_sort_key, reverse=True)
             if len(cols) >= 2:
                 curr, prev = cols[:2]
-                f_skor, _ = calculate_piotroski_f_score(row, bal, inc, curr, prev)
-                m_skor    = calculate_beneish_m_score(c, bal, inc, cf, curr, prev)
+                # f_skor, _ = calculate_piotroski_f_score(row, bal, inc, curr, prev)
+                # m_skor    = calculate_beneish_m_score(c, bal, inc, cf, curr, prev)
+                f_skor, _, _ = PiotroskiScorer(row, bal, inc, curr, prev).calculate()
+                m_skor, _, _ = BeneishScorer(c, bal, inc, cf, curr, prev).calculate()
             else:
                 logs.append(f"ℹ️ {c}: <2 dönem — F/M atlandı/")
                             
@@ -59,15 +65,18 @@ def build_score_table(progress_cb=None):
         except Exception as e:
             logs.append(f"⚠️ {c}: {e}")
 
-        lynch, *_ = peter_lynch_score_card(row)
-        graham     = graham_score(row)
+        # lynch, *_ = peter_lynch_score_card(row)
+        # graham     = graham_score(row)
+        
+        g_score, *_ = GrahamScorer(row).calculate()
+        l_score, *_ = LynchScorer(row).calculate()
 
         results.append({
             "Şirket"       : c,
             "F-Skor"       : f_skor,
             "M-Skor"       : m_skor,
-            "L-Skor"       : lynch,
-            "Graham Skoru" : graham,
+            "L-Skor"       : l_score,
+            "Graham Skoru" : g_score,
         })
 
 

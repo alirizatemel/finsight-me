@@ -24,7 +24,6 @@ def safe_divide(numerator, denominator):
         return 0
     return numerator / denominator
 
-
 def get_value(df, kalem_adlari, kolon):
     """
     Gerekli kalemi bulur. Eğer 'Hasılat' aranıyorsa, Yurt İçi + Yurt Dışı şeklinde toplar.
@@ -53,5 +52,10 @@ def get_value(df, kalem_adlari, kolon):
 
     return 0
 
-
+def period_order(period_str):
+    try:
+        year, month = period_str.split("/")
+        return pd.to_datetime(f"{year}-{month}-01")
+    except:
+        return pd.NaT
 

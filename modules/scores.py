@@ -62,7 +62,6 @@ def monte_carlo_dcf_simple(
 def calculate_piotroski_f_score(row, balance, income, curr, prev):
     net_profit = scalar(row["Net Dönem Karı"])
     operating_cash_flow = scalar(row["İşletme Faaliyetlerinden Nakit Akışları"])
-    total_assets = scalar(row["Toplam Varlıklar"])
     f_score = 0
     detail = {}
     detail_str = {}
