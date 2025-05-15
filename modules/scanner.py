@@ -5,7 +5,7 @@ Generic scan utilities shared by Financial Radar and Trap Radar.
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from typing import Optional, Tuple, List, Dict
+from typing import Tuple, List, Dict
 from modules.data_loader import load_financial_data
 from modules.scoring import (
     beneish, graham, lynch, piotroski
@@ -15,6 +15,7 @@ from modules.scores import (
     period_order,
     fcf_detailed_analysis
 )
+from modules.logger import logger 
 
 # ────────────────────────────────────────────────
 # Helpers
@@ -33,8 +34,8 @@ def latest_common_period(balance: pd.DataFrame,
 def run_scan(
         radar: pd.DataFrame,
         *,
-        forecast_years: Optional[int] = None,
-        n_sims: Optional[int] = None
+        forecast_years: int = 5,   # default 5 yıl
+        n_sims: int = 1000         # default 1000 simülasyon
 ) -> Tuple[pd.DataFrame, List[str], Dict]:
     """
     If `forecast_years`+`n_sims` are given, the scan also
@@ -56,7 +57,7 @@ def run_scan(
                 raise ValueError("ortak dönem yok")
             curr, prev        = periods[:2]
 
-            f_score, _        = piotroski.PiotroskiScorer(row, bal, inc,
+            f_score, *_        = piotroski.PiotroskiScorer(row, bal, inc,
                                                           curr, prev).calculate()
             m_score, *_       = beneish.BeneishScorer(c, bal, inc, cash,
                                                      curr, prev).calculate()
@@ -73,34 +74,37 @@ def run_scan(
 
             # Optional MOS branch (Trap Radar view)
             if forecast_years and n_sims:
-                df_fcf   = fcf_detailed_analysis(c, row)
-                if df_fcf is None or df_fcf.empty:
-                    raise ValueError("FCF verileri eksik.")
+                try:
+                    df_fcf   = fcf_detailed_analysis(c, row)
+                    if df_fcf is None or df_fcf.empty:
+                        raise ValueError("FCF verileri eksik.")
 
-                ttm_fcf  = (df_fcf["FCF"].iloc[-4:].sum()
-                            if len(df_fcf) >= 4 else df_fcf["FCF"].iloc[-1])
-                if ttm_fcf <= 0:
-                    raise ValueError("Son FCF negatif.")
+                    ttm_fcf  = (df_fcf["FCF"].iloc[-4:].sum()
+                                if len(df_fcf) >= 4 else df_fcf["FCF"].iloc[-1])
+                    if ttm_fcf <= 0:
+                        raise ValueError("Son FCF negatif.")
 
-                intrinsic = np.median(
-                    monte_carlo_dcf_simple(ttm_fcf,
-                                           forecast_years=forecast_years,
-                                           n_sims=n_sims)
-                )
+                    intrinsic = np.median(
+                        monte_carlo_dcf_simple(ttm_fcf,
+                                            forecast_years=forecast_years,
+                                            n_sims=n_sims)
+                    )
 
-                cur_price   = row.get("Son Fiyat").iat[0]
-                market_cap  = row.get("Piyasa Değeri").iat[0]
-                if cur_price and market_cap and market_cap > 0:
-                    shares_out = market_cap / cur_price
-                    intrinsic_ps = intrinsic / shares_out
-                    premium = (intrinsic_ps - cur_price) / cur_price
+                    cur_price   = row.get("Son Fiyat").iat[0]
+                    market_cap  = row.get("Piyasa Değeri").iat[0]
+                    if cur_price and market_cap and market_cap > 0:
+                        shares_out = market_cap / cur_price
+                        intrinsic_ps = intrinsic / shares_out
+                        premium = (intrinsic_ps - cur_price) / cur_price
 
-                    record.update({
-                        "İçsel Değer (Medyan)": intrinsic,
-                        "Piyasa Değeri":        market_cap,
-                        "MOS":                  premium,
-                    })
-
+                        record.update({
+                            "İçsel Değer (Medyan)": intrinsic,
+                            "Piyasa Değeri":        market_cap,
+                            "MOS":                  premium,
+                        })
+                except Exception as mos_error:
+                    logger.warning(f"{c}: MOS hesaplanamadı → {mos_error}")
+            
             records.append(record)
 
         except ValueError as exc:
@@ -113,12 +117,22 @@ def run_scan(
                 counters["piyasa"] += 1
             else:
                 counters["diğer"] += 1
+            
+            logger.warning(f"{c}: {exc}")
             logs.append(f"{c}: {exc}")
         except Exception as exc:
             counters["diğer"] += 1
+            logger.warning(f"{c}: {exc}")
             logs.append(f"{c}: {exc}")
 
     df = pd.DataFrame(records)
+
+    if not df.empty:
+        df["timestamp"] = datetime.now()
+        for col in ["MOS", "İçsel Değer (Medyan)", "Piyasa Değeri"]:
+            if col not in df.columns:
+                df[col] = np.nan  # eksikse bile tüm satırlara NaN olarak ekle
+
     if not df.empty:
         df["timestamp"] = datetime.now()
     if "MOS" in df.columns:

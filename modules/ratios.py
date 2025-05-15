@@ -1,7 +1,7 @@
 import pandas as pd
 from modules.utils import scalar
 from modules.financial_snapshot import build_snapshot
-
+from modules.logger import logger 
 
 def calculate_roa_ttm(income: pd.DataFrame, balance: pd.DataFrame, period_order_fn) -> float:
     """
@@ -45,7 +45,7 @@ def calculate_roa_ttm(income: pd.DataFrame, balance: pd.DataFrame, period_order_
         return roa
 
     except Exception as e:
-        print("🚨 ROA TTM hesaplama hatası:", e)
+        logger.exception("🚨 ROA TTM hesaplama hatası:", e)
         return 0
 
 

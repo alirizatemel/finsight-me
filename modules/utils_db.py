@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine #type: ignore
 import pandas as pd
-import os
+from modules.logger import logger 
 
 # use env‑vars for secrets
 PG_URL = "postgresql://postgres:secret@localhost:5432/fin_db"  # ← burayı değiştirin
@@ -14,4 +14,8 @@ def load_scores_df(*, table: str = "trap") -> pd.DataFrame:
     return pd.read_sql(f"SELECT * FROM {table}", engine)
 
 def save_scores_df(df: pd.DataFrame, *, table: str = "trap"):
-    df.to_sql(table, engine, if_exists="replace", index=False)
+    try:
+        df.to_sql(table, engine, if_exists="replace", index=False)
+    except Exception as e:
+        logger.exception("DB save failed:", e)
+        raise

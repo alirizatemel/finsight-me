@@ -1,5 +1,6 @@
 from modules.utils import safe_divide
 from modules.financial_snapshot import build_snapshot
+from modules.logger import logger
 
 def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):
     try:
@@ -48,7 +49,7 @@ def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):
         return round(m_score, 2)
 
     except Exception as e:
-        print(f"{company} Beneish M-Score hesaplanırken hata: {e}")
+        logger.exception(f"{company} Beneish M-Score hesaplanırken hata: {e}")
         return None
 
 def m_skor_karne_yorum(m_skor):

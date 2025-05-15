@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.options import Options # type: ignore
 from selenium.webdriver.common.by import By # type: ignore
 from selenium.webdriver.support.ui import WebDriverWait # type: ignore
 from selenium.webdriver.support import expected_conditions as EC # type: ignore
-
+from modules.logger import logger 
 
 
 from config import COMPANIES_DIR, SON_BILANCOLAR_JSON, DOWNLOADS_DIR
@@ -40,7 +40,7 @@ def is_bilanco_outdated(excel_path: Path, target: str = TARGET_PERIOD) -> bool:
         latest_period = period_cols[0]   # En soldaki = en yeni
         return latest_period != target
     except Exception as e:
-        print(f"⚠️ {excel_path.name} okunamadı: {e}")
+        logger.exception(f"⚠️ {excel_path.name} okunamadı: {e}")
         return True
 
 def configure_driver():

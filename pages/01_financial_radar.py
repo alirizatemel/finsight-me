@@ -1,3 +1,4 @@
+import os
 import streamlit as st # type: ignore
 import pandas as pd
 from modules.data_loader import load_financial_data
@@ -7,6 +8,8 @@ from modules.utils_db import (
 )
 from streamlit import column_config as cc # type: ignore
 from config import RADAR_XLSX
+
+LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "scanner.log")
 
 
 loglar = []
@@ -96,17 +99,19 @@ st.sidebar.header("🔍 Skor Filtreleri")
 with st.sidebar.expander("Filtreler", expanded=True):
     f_min, f_max = st.slider("F-Skor Aralığı", 0, 9, (0, 9), key="f")
     m_min, m_max = st.slider("M-Skor Aralığı", -5.0, 5.0, (-5.0, 5.0), 0.1, key="m")
-    l_min, l_max = st.slider("Lynch Aralığı", 0, 5, (0, 5), key="l")
+    l_min, l_max = st.slider("Lynch Aralığı", 0, 3, (0, 3), key="l")
     g_min, g_max = st.slider("Graham Aralığı", 0, 5, (0, 5), key="g")
 
     colA, colB = st.columns(2)
     with colA:
-         apply = st.button("🔍 Filtrele", key="apply_filter")
+        apply = st.button("🔍 Filtrele", key="apply_filter")
+
     with colB:
         reset = st.button("🔄 Sıfırla", key="reset_filter")
 
 if reset:
     st.session_state.pop("score_df", None)
+
 
 # -------------------------------------------------------------------------
 # DB‑first logic (same UX as Trap Radar)
@@ -123,30 +128,60 @@ with st.sidebar:
             st.session_state.scan = True
             st.session_state.force_refresh = True
 
+# -------------------------------------------------------------------------
+# DB‑first logic  (load / refresh)
+# -------------------------------------------------------------------------
 if st.session_state.get("scan"):
+    
     if scores_table_empty("radar_scores") or st.session_state.get("force_refresh"):
         st.info("📊 Skorlar hesaplanıyor, veritabanı güncelleniyor…")
-        df_scan, logs, _ = run_scan(df_radar)   # <‑‑ lightweight scan
+        df_scan, logs, _ = run_scan(df_radar)
         save_scores_df(df_scan, table="radar_scores")
     else:
         st.success("📁 Skorlar veritabanından yüklendi.")
         df_scan = load_scores_df(table="radar_scores")
-        logs = []
+
+    # ❷ HER İKİ DURUMDA DA DF’Yİ HAFIZADA TUT
+    st.session_state.score_df = df_scan
+    st.session_state.scan = False            # tarama bitti
+    st.session_state.force_refresh = False
+
+# ❸ EĞER SCAN YOKSA AMA DF BELLEKTEYSE ONU KULLAN
+elif "score_df" in st.session_state:
+    df_scan = st.session_state.score_df
+
+# ❹ HİÇBİR ŞEY YOKSA KULLANICIYA BİLGİ VER, STOP ETME
 else:
+    st.info("Önce “Veritabanından Yükle” veya “Skorları Yenile” seçeneğini tıklayın.")
     st.stop()
+
 
 score_df = df_scan     # rename for clarity below
 
 
 # Skor tablosunu göster
-score_df["Link"]     = "/stock_analysis?symbol=" + score_df["Şirket"]
+symbol_col = (
+    "sirket" if "sirket" in score_df.columns
+    else "Şirket" if "Şirket" in score_df.columns
+    else None
+)
+
+if symbol_col is None:
+    st.error("❌ 'sirket' (veya 'Şirket') kolonu bulunamadı. Veri kaydedilememiş olabilir.")
+    st.stop()
+
+score_df["Link"] = "/stock_analysis?symbol=" + score_df[symbol_col]
 
 
 # Skor kolonlarını numeriğe çevir, olmayanlar NaN olur
 for col in ["F-Skor", "M-Skor", "Lynch", "Graham", "MOS"]:
     score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
-score_df["MOS"] = score_df["MOS"]*100
+# MOS'u yalnızca 0–1 aralığında ise %'ye çevir
+if "MOS_scaled" not in st.session_state:
+    score_df["MOS"] = score_df["MOS"] * 100
+    st.session_state.MOS_scaled = True
+
 # --- Uygula / sıfırla filtre --------------------------------------------
 if apply:
     filtered_df = score_df[
@@ -156,14 +191,13 @@ if apply:
         (score_df["Graham"] >= g_min) & (score_df["Graham"] <= g_max)
     ]
     st.markdown(f"**🔎 Filtrelenmiş Şirket Sayısı:** {len(filtered_df)}")
-    #st.dataframe(filtered_df.sort_values("F-Skor", ascending=False), use_container_width=True)
+    
     st.dataframe(
         filtered_df.sort_values("F-Skor", ascending=False),
         column_config={
             "Link": cc.LinkColumn(
                 label="Link",    # hangi kolon URL’yi tutuyor
-                display_text="Analize Git",
-                #target="_self",     # aynı sekmede aç
+                display_text="Analize Git"
             ),
             "MOS": cc.NumberColumn(
                 label="MOS",
@@ -183,8 +217,7 @@ else:
         column_config={
             "Link": cc.LinkColumn(
                 label="Link",    # hangi kolon URL’yi tutuyor
-                display_text="Analize Git",
-                #target="_self",     # aynı sekmede aç
+                display_text="Analize Git"
             ),
             "MOS": cc.NumberColumn(
                 label="MOS",
@@ -198,6 +231,10 @@ else:
 
 
 # Logları göster
-with st.expander("🪵 Loglar"):
-    for log in loglar:
-        st.write(log)
+with st.expander("🪵 İşlem Logları (scanner.log)", expanded=False):
+    if os.path.exists(LOG_PATH):
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            logs = f.read()
+            st.text_area("Log İçeriği", logs, height=300)
+    else:
+        st.info("Henüz log dosyası oluşturulmamış.")

@@ -86,7 +86,7 @@ def main():
             st.info("📊 Skorlar hesaplanıyor, veritabanı güncelleniyor…")
             df, logs, counters = run_scan(radar, years, int(n_sims))
             if not df.empty:
-                save_scores_df(df,"radar_scores")                     # TABLOYU YENİLE
+                save_scores_df(df, table="radar_scores")
         else:
             st.success("📁 Skorlar veritabanından yüklendi.")
             df = load_scores_df(table="radar_scores")

@@ -15,6 +15,7 @@ from modules.scoring.beneish import BeneishScorer
 from modules.scoring.graham import GrahamScorer
 from modules.scoring.lynch import LynchScorer
 from modules.scoring.piotroski import PiotroskiScorer
+from modules.logger import logger 
 
 def monte_carlo_dcf_simple(
     last_fcf: float,
@@ -153,7 +154,7 @@ def fcf_detailed_analysis(company, row):
     fcf_series   = operating_cf_series - capex_series
     market_cap   = (pd.to_numeric(row["Piyasa Değeri"], errors="coerce").squeeze())
     if pd.isna(market_cap) or market_cap <= 0:
-        print("⛔ Geçersiz piyasa değeri — FCF verimi hesaplanamadı.")
+        logger.exception("⛔ Geçersiz piyasa değeri — FCF verimi hesaplanamadı.")
         return None
     fcf_yield = (fcf_series / market_cap * 100).dropna()
 
@@ -197,7 +198,7 @@ def fcf_detailed_analysis_plot(company, row):
 
     market_cap = row['Piyasa Değeri']
     if market_cap.empty or scalar(market_cap) <= 0:
-        print("⛔ Piyasa değeri geçersiz.")
+        logger.exception("⛔ Piyasa değeri geçersiz.")
         return None
     pdg = scalar(market_cap)
 
