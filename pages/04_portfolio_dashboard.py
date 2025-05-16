@@ -28,6 +28,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st #type: ignore
 
+from modules.utils_db import load_performance_log, load_portfolio_df
+
 # ---------------------------------------------------------------------------
 # ⏱ Page set‑up
 # ---------------------------------------------------------------------------
@@ -37,11 +39,42 @@ st.set_page_config(
     layout="wide",
 )
 
+PORTFOLIO_COL_MAP = {
+    "hisse":        "Hisse",
+    "lot":          "Lot",
+    "maliyet":      "Maliyet",
+    "alis_tarihi":  "Alış Tarihi",
+    "satis_tarihi": "Satış Tarihi",
+    "satis_fiyat":  "Satış Fiyatı",
+    "is_fund":      "is_fund",
+    "notu":         "Not",
+    "graham_skor":  "Graham Skoru",
+    "mos":          "MOS",
+}
+
 st.title("📊 Portföy & Performans Dashboard")
 
 # ---------------------------------------------------------------------------
 # 🔧 Helper functions (taken & refactored from your notebooks)
 # ---------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------
+# Data loaders (cached)
+# ------------------------------------------------------------------------
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_log() -> pd.DataFrame:
+    df = load_performance_log()
+    if df.empty:
+        return df
+    df["Değer"] = df["lot"] * df["fiyat"]
+    return df
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_portfolio() -> pd.DataFrame:
+    df = load_portfolio_df()
+    df = df.rename(columns=PORTFOLIO_COL_MAP)
+    return df
+
 
 @st.cache_data(show_spinner=False)          # refresh every 60 s
 def latest_prices_from_log(log_path: Path | str) -> pd.Series:
@@ -54,27 +87,9 @@ def latest_prices_from_log(log_path: Path | str) -> pd.Series:
         return pd.Series(dtype=float)
 
     # ensure newest record per ticker
-    df_sorted = df.sort_values(["Hisse", "Tarih"])
-    latest = df_sorted.groupby("Hisse").tail(1).set_index("Hisse")["Fiyat"]
+    df_sorted = df.sort_values(["hisse", "tarih"])
+    latest = df_sorted.groupby("hisse").tail(1).set_index("hisse")["fiyat"]
     return latest
-
-
-@st.cache_data(show_spinner=False)
-def load_log(log_path: Path | str) -> pd.DataFrame:
-    """Read the daily position log and enrich with helper columns."""
-    df = pd.read_excel(log_path)
-    if df.empty:
-        st.warning("Performans log dosyası boş görünüyor.")
-        return df
-
-    df["Tarih"] = pd.to_datetime(df["Tarih"])
-    df["Değer"] = df["Lot"] * df["Fiyat"]
-    return df
-
-@st.cache_data(show_spinner=False)
-def load_portfolio(xlsx_path: Path | str) -> pd.DataFrame:
-    df = pd.read_excel(xlsx_path)
-    return df
 
 @st.cache_data(show_spinner=False)
 def weekly_performance(df_log: pd.DataFrame, lookback_days: int = 7) -> pd.DataFrame:
@@ -82,11 +97,11 @@ def weekly_performance(df_log: pd.DataFrame, lookback_days: int = 7) -> pd.DataF
     if df_log.empty:
         return pd.DataFrame()
 
-    cutoff = df_log["Tarih"].max() - timedelta(days=lookback_days)
-    df_slice = df_log[df_log["Tarih"] >= cutoff].copy()
-    df_slice.sort_values(["Hisse", "Tarih"], inplace=True)
-    first_prices = df_slice.groupby("Hisse").first()["Fiyat"]
-    last_prices = df_slice.groupby("Hisse").last()["Fiyat"]
+    cutoff = df_log["tarih"].max() - timedelta(days=lookback_days)
+    df_slice = df_log[df_log["tarih"] >= cutoff].copy()
+    df_slice.sort_values(["hisse", "tarih"], inplace=True)
+    first_prices = df_slice.groupby("hisse").first()["fiyat"]
+    last_prices = df_slice.groupby("hisse").last()["fiyat"]
     perf = ((last_prices - first_prices) / first_prices * 100).round(2)
     return perf.reset_index(name="Getiri (%)")
 
@@ -95,10 +110,10 @@ def sharpe_ratio(df_log: pd.DataFrame, risk_free_daily: float = 0.47 / 252) -> p
     if df_log.empty:
         return pd.DataFrame()
 
-    df_sorted = df_log.sort_values(["Hisse", "Tarih"]).copy()
-    df_sorted["Getiri"] = df_sorted.groupby("Hisse")["Fiyat"].pct_change()
+    df_sorted = df_log.sort_values(["hisse", "tarih"]).copy()
+    df_sorted["Getiri"] = df_sorted.groupby("hisse")["fiyat"].pct_change()
 
-    agg = df_sorted.groupby("Hisse").agg(
+    agg = df_sorted.groupby("hisse").agg(
         ort_getiri=("Getiri", "mean"),
         std=("Getiri", "std"),
         n=("Getiri", "count"),
@@ -108,54 +123,41 @@ def sharpe_ratio(df_log: pd.DataFrame, risk_free_daily: float = 0.47 / 252) -> p
     return agg
 
 @st.cache_data(show_spinner=False)
-def enrich_portfolio(df: pd.DataFrame) -> pd.DataFrame:
-    """Classify assets and pre‑compute P/L columns."""
+def enrich_portfolio(df: pd.DataFrame):
     df = df.copy()
-    df["Varlık Tipi"] = df["Graham Skoru"].apply(
-        lambda x: "Değer Hissesi" if pd.notnull(x) else "Fon/Spekülatif"
-    )
 
-    # Open positions (no sale price)
-    df_open = df[df["Satış Fiyatı"].isna()].copy()
+    df["Varlık Tipi"] = np.where(df["Graham Skoru"].notna(),
+                                 "Değer Hissesi", "Fon/Spekülatif")
+
+    # Açık pozisyonlar
+    open_mask = df["Satış Fiyatı"].isna()
+    df_open = df.loc[open_mask].copy()
+
     df_open["Yatırılan Tutar"] = df_open["Lot"] * df_open["Maliyet"]
     df_open["Anlık Değer"] = df_open["Lot"] * df_open["Güncel Fiyat"]
     df_open["Kar/Zarar"] = df_open["Anlık Değer"] - df_open["Yatırılan Tutar"]
-    df_open["Kar/Zarar (%)"] = (df_open["Kar/Zarar"] / df_open["Yatırılan Tutar"]) * 100
+    df_open["Kar/Zarar (%)"] = (df_open["Kar/Zarar"] /
+                                df_open["Yatırılan Tutar"]) * 100
 
-    # Closed positions
-    df_closed = df[df["Satış Fiyatı"].notna()].copy()
+    # Kapalı pozisyonlar
+    closed_mask = ~open_mask
+    df_closed = df.loc[closed_mask].copy()
+
     df_closed["Yatırılan Tutar"] = df_closed["Lot"] * df_closed["Maliyet"]
     df_closed["Satış Tutarı"] = df_closed["Lot"] * df_closed["Satış Fiyatı"]
-    df_closed["Gerçekleşen Kar/Zarar"] = df_closed["Satış Tutarı"] - df_closed["Yatırılan Tutar"]
-    df_closed["Kar/Zarar (%)"] = (df_closed["Gerçekleşen Kar/Zarar"] / df_closed["Yatırılan Tutar"]) * 100
+    df_closed["Gerçekleşen Kar/Zarar"] = (
+        df_closed["Satış Tutarı"] - df_closed["Yatırılan Tutar"]
+    )
+    df_closed["Kar/Zarar (%)"] = (df_closed["Gerçekleşen Kar/Zarar"] /
+                                  df_closed["Yatırılan Tutar"]) * 100
 
     return df_open, df_closed
 
 # ---------------------------------------------------------------------------
 # 📂 Sidebar – File selection & controls
 # ---------------------------------------------------------------------------
-st.sidebar.header("⚙️ Ayarlar")
+st.sidebar.header("⚙️ Görünüm")
 
-def_path_log = Path("data/performans_log.xlsx")
-log_file = st.sidebar.file_uploader(
-    "Performans logu (performans_log.xlsx)",
-    type=["xlsx"],
-    accept_multiple_files=False,
-    key="log_uploader",
-)
-
-log_path: Path | str = log_file if log_file else def_path_log
-
-
-def_path_port = Path("data/portfoy_verisi.xlsx")
-port_file = st.sidebar.file_uploader(
-    "Portföy verisi (portfoy_verisi.xlsx)",
-    type=["xlsx"],
-    accept_multiple_files=False,
-    key="port_uploader",
-)
-
-port_path: Path | str = port_file if port_file else def_path_port
 
 page = st.sidebar.radio("Sayfa Seç", ["Performans", "Portföy Analizi"])
 
@@ -163,10 +165,9 @@ page = st.sidebar.radio("Sayfa Seç", ["Performans", "Portföy Analizi"])
 # 📊 PERFORMANS PANELİ
 # ---------------------------------------------------------------------------
 if page == "Performans":
-    df_log = load_log(log_path)
+    df_log = load_log()
 
     if df_log.empty:
-        st.info("Veri bulunamadı veya dosya yüklenmedi.")
         st.stop()
 
     col1, col2 = st.columns(2)
@@ -180,7 +181,7 @@ if page == "Performans":
             st.dataframe(perf, hide_index=True)
             colors = ["green" if x > 0 else "red" for x in perf["Getiri (%)"]]
             fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(perf["Hisse"], perf["Getiri (%)"], color=colors)
+            ax.bar(perf["hisse"], perf["Getiri (%)"], color=colors)
             ax.axhline(0, color="grey", linestyle="--", lw=1)
             ax.set_ylabel("%")
             ax.set_title("Toplam Getiri (7g)")
@@ -194,14 +195,14 @@ if page == "Performans":
             st.warning("Sharpe oranı hesaplanamadı.")
         else:
             st.dataframe(
-                sharpe[["Hisse", "Sharpe_oran", "n"]].rename(
+                sharpe[["hisse", "Sharpe_oran", "n"]].rename(
                     columns={"Sharpe_oran": "Sharpe", "n": "Gözlem"}
                 ),
                 hide_index=True,
             )
             fig, ax = plt.subplots(figsize=(6, 4))
             colors = ["green" if x > 0 else "red" for x in sharpe["Sharpe_oran"]]
-            ax.bar(sharpe["Hisse"], sharpe["Sharpe_oran"], color=colors)
+            ax.bar(sharpe["hisse"], sharpe["Sharpe_oran"], color=colors)
             ax.axhline(0, color="grey", linestyle="--", lw=1)
             ax.set_ylabel("Sharpe")
             ax.set_title("Sharpe Oranı")
@@ -211,8 +212,8 @@ if page == "Performans":
     st.divider()
     st.subheader("Zaman Serisi – Portföy Değeri")
     fig, ax = plt.subplots(figsize=(12, 4))
-    for hisse, grp in df_log.groupby("Hisse"):
-        ax.plot(grp["Tarih"], grp["Değer"], label=hisse)
+    for hisse, grp in df_log.groupby("hisse"):
+        ax.plot(grp["tarih"], grp["Değer"], label=hisse)
     ax.legend(ncol=5, fontsize="small")
     ax.set_ylabel("TL")
     ax.set_xlabel("")
@@ -223,19 +224,21 @@ if page == "Performans":
 # 💼 PORTFÖY ANALİZİ
 # ---------------------------------------------------------------------------
 else:
-    df_port = load_portfolio(port_path)
+    df_port = load_portfolio()
     if df_port.empty:
-        st.info("Portföy verisi bulunamadı veya dosya yüklenmedi.")
+        st.info("Portföy verisi bulunamadı.")
         st.stop()
-    # ---- Güncel Fiyatı performans_log.xlsx'den al ----------------------------
-    latest_prices = latest_prices_from_log(log_path)
 
-    # Tablodaki fiyatı log verisiyle güncelle; logda yoksa eski fiyat korunur
-    df_port["Güncel Fiyat"] = (
-        df_port["Hisse"]
-        .map(latest_prices)
-        .fillna(df_port["Güncel Fiyat"])
+    # Güncel fiyatları performans_log’tan çek
+    latest_prices = (
+        load_log()
+        .sort_values(["hisse", "tarih"])
+        .groupby("hisse")
+        .tail(1)
+        .set_index("hisse")["fiyat"]
     )
+    df_port["Güncel Fiyat"] = df_port["hisse"].map(latest_prices)
+
     df_open, df_closed = enrich_portfolio(df_port)
 
     # ---- Değer Hisseleri – Açık ----
@@ -287,7 +290,7 @@ else:
         )
         fig, ax = plt.subplots(figsize=(8, 4))
         colors = ["green" if x > 0 else "red" for x in df_closed["Gerçekleşen Kar/Zarar"]]
-        ax.bar(df_closed["Hisse"], df_closed["Gerçekleşen Kar/Zarar"], color=colors)
+        ax.bar(df_closed["hisse"], df_closed["Gerçekleşen Kar/Zarar"], color=colors)
         ax.set_ylabel("TL")
         ax.set_title("Net Kar/Zarar – Satılmış Değer Hisseleri")
         st.pyplot(fig)
@@ -305,7 +308,7 @@ else:
             st.dataframe(df_fon.round(2), hide_index=True)
             fig, ax = plt.subplots(figsize=(8, 4))
             colors = ["green" if x > 0 else "red" for x in df_fon["Kar / Zarar"].fillna(0)]
-            ax.bar(df_fon["Hisse"], df_fon["Kar / Zarar"].fillna(0), color=colors)
+            ax.bar(df_fon["hisse"], df_fon["Kar / Zarar"].fillna(0), color=colors)
             ax.set_ylabel("TL")
             ax.set_title("Fon / Spekülatif – Kar/Zarar")
             st.pyplot(fig)
