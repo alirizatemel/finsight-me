@@ -25,7 +25,7 @@ def save_scores_df(df: pd.DataFrame, *, table: str = "trap"):
 def load_performance_log() -> pd.DataFrame:
     """Tablodaki tüm logu getirir (yoksa boş df döner)."""
     try:
-        return pd.read_sql("SELECT * FROM performance_log", engine)
+        return pd.read_sql("SELECT pl.tarih, pl.hisse, pl.lot, pl.fiyat FROM performance_log pl JOIN portfolio p ON pl.hisse = p.hisse where p.satis_fiyat is null;", engine)
     except Exception:       # tablo yoksa
         return pd.DataFrame(columns=["tarih", "hisse", "lot", "fiyat"])
 
@@ -60,12 +60,43 @@ def load_portfolio_df() -> pd.DataFrame:
     Boşsa sütun başlıkları korunarak boş döner.
     """
     cols = [
-        "hisse", "is_fund", "lot", "maliyet",
+        "hisse",  "lot", "maliyet",
         "alis_tarihi", "satis_tarihi", "satis_fiyat", "notu",
     ]
     try:
         return pd.read_sql("SELECT * FROM portfolio", engine)[cols]
     except Exception:                # tablo yoksa
+        return pd.DataFrame(columns=cols)
+    
+def load_active_portfolio_df() -> pd.DataFrame:
+    """
+    Portföy tablosunu DataFrame olarak getirir.
+    Boşsa sütun başlıkları korunarak boş döner.
+    """
+    cols = [
+        "hisse",  "lot", "maliyet",
+        "alis_tarihi", "satis_tarihi", "satis_fiyat", "graham_skor"
+    ]
+    try:
+        return pd.read_sql("""
+    SELECT
+        p.id,
+        p.hisse,
+        p.lot,
+        p.maliyet,
+        p.alis_tarihi,
+        p.satis_tarihi,
+        p.satis_fiyat,
+        rs."Graham" AS graham_skor 
+    FROM
+        portfolio p
+    JOIN
+        radar_scores rs ON rs."Şirket" = p.hisse
+    WHERE
+        p.satis_fiyat IS NULL
+""", engine)[cols]
+    except Exception as e:                # tablo yoksa
+        print(f"exception:{e}")
         return pd.DataFrame(columns=cols)
 
 
@@ -79,16 +110,16 @@ def upsert_portfolio(df: pd.DataFrame,
 
     insert_sql = f"""
         INSERT INTO portfolio (
-            hisse, is_fund, lot, maliyet,
+            hisse, lot, maliyet,
             alis_tarihi, satis_tarihi, satis_fiyat, notu
         )
         VALUES (
-            :hisse, :is_fund, :lot, :maliyet,
+            :hisse,  :lot, :maliyet,
             :alis_tarihi, :satis_tarihi, :satis_fiyat, :notu
         )
         ON CONFLICT ({", ".join(conflict_cols)})
         DO UPDATE
-           SET is_fund     = EXCLUDED.is_fund,
+           SET 
                lot         = EXCLUDED.lot,
                maliyet     = EXCLUDED.maliyet,
                satis_tarihi= EXCLUDED.satis_tarihi,

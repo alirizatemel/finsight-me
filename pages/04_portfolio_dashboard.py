@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st #type: ignore
 
-from modules.utils_db import load_performance_log, load_portfolio_df
+from modules.utils_db import load_performance_log, load_active_portfolio_df
 
 # ---------------------------------------------------------------------------
 # ⏱ Page set‑up
@@ -46,7 +46,6 @@ PORTFOLIO_COL_MAP = {
     "alis_tarihi":  "Alış Tarihi",
     "satis_tarihi": "Satış Tarihi",
     "satis_fiyat":  "Satış Fiyatı",
-    "is_fund":      "is_fund",
     "notu":         "Not",
     "graham_skor":  "Graham Skoru",
     "mos":          "MOS",
@@ -71,7 +70,7 @@ def load_log() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_portfolio() -> pd.DataFrame:
-    df = load_portfolio_df()
+    df = load_active_portfolio_df()
     df = df.rename(columns=PORTFOLIO_COL_MAP)
     return df
 
@@ -125,9 +124,6 @@ def sharpe_ratio(df_log: pd.DataFrame, risk_free_daily: float = 0.47 / 252) -> p
 @st.cache_data(show_spinner=False)
 def enrich_portfolio(df: pd.DataFrame):
     df = df.copy()
-
-    df["Varlık Tipi"] = np.where(df["Graham Skoru"].notna(),
-                                 "Değer Hissesi", "Fon/Spekülatif")
 
     # Açık pozisyonlar
     open_mask = df["Satış Fiyatı"].isna()
@@ -237,7 +233,7 @@ else:
         .tail(1)
         .set_index("hisse")["fiyat"]
     )
-    df_port["Güncel Fiyat"] = df_port["hisse"].map(latest_prices)
+    df_port["Güncel Fiyat"] = df_port["Hisse"].map(latest_prices)
 
     df_open, df_closed = enrich_portfolio(df_port)
 

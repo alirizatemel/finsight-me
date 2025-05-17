@@ -32,7 +32,6 @@ def _df_defaults() -> dict:
     """Yeni kayıt için varsayılan değerler"""
     return {
         "hisse": "",
-        "is_fund": False,
         "lot": 1,
         "maliyet": 0.0,
         "alis_tarihi": date.today(),
@@ -45,7 +44,6 @@ def _df_defaults() -> dict:
 def _fill_form(form, rec: dict):
     """Form alanlarını doldurur ve kullanıcı girişini alır."""
     hisse = form.text_input("Hisse", max_chars=20, value=rec["hisse"])
-    is_fund = form.checkbox("Yatırım Fonu mu?", value=rec["is_fund"])
     lot = form.number_input("Lot", min_value=1, value=int(rec["lot"]))
     maliyet = form.number_input("Maliyet", format="%.4f", value=float(rec["maliyet"]))
     alis_tarihi = form.date_input("Alış Tarihi", value=rec["alis_tarihi"])
@@ -54,12 +52,20 @@ def _fill_form(form, rec: dict):
         value=rec["satis_tarihi"] if rec["satis_tarihi"] else None,
         disabled=False
     ) 
-    satis_fiyat = form.number_input("Satış Fiyatı", format="%.4f", value=float(rec["satis_fiyat"]))
+    satis_fiyat_raw = form.text_input(
+        "Satış Fiyatı",
+        value="" if rec["satis_fiyat"] in (None, 0.0) else f"{rec['satis_fiyat']:.4f}"
+    )
+
+    try:
+        satis_fiyat = float(satis_fiyat_raw) if satis_fiyat_raw.strip() else None
+    except ValueError:
+        st.warning("Satış fiyatı geçerli bir sayı olmalıdır.")
+        satis_fiyat = None
     notu = form.text_area("Not", value=rec["notu"])
 
     return {
         "hisse": hisse,
-        "is_fund": is_fund,
         "lot": lot,
         "maliyet": maliyet,
         "alis_tarihi": alis_tarihi,
@@ -120,6 +126,8 @@ with st.expander("➕ Yeni Kayıt / ✏️ Güncelle"):
             rec_df = pd.DataFrame([new_values])
             upsert_portfolio(rec_df)  # util fonksiyonu id'siz upsert eder
             st.success("Kayıt eklendi/güncellendi. Sayfayı yenileyin veya tabloyu kontrol edin.")
+
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Tablo
