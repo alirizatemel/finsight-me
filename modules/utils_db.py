@@ -15,11 +15,9 @@ def load_scores_df(*, table: str = "trap") -> pd.DataFrame:
     return pd.read_sql(f"SELECT * FROM {table}", engine)
 
 def save_scores_df(df: pd.DataFrame, *, table: str = "trap"):
-    try:
-        df.to_sql(table, engine, if_exists="replace", index=False)
-    except Exception as e:
-        logger.exception("DB save failed:", e)
-        raise
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE TABLE {table};"))
+        df.to_sql(table, con=conn, if_exists="append", index=False)
 
 # ——— PERFORMANCE LOG yardımcıları ———
 def load_performance_log() -> pd.DataFrame:
