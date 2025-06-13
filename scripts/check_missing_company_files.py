@@ -20,7 +20,7 @@ def parse_pg_url(pg_url):
 
 def get_company_list_from_db(pg_url):
     config = parse_pg_url(pg_url)
-    query = 'SELECT DISTINCT "Şirket" FROM radar_scores'
+    query = 'SELECT DISTINCT "hisse" FROM radar_scores'
     try:
         conn = psycopg2.connect(**config)
         cur = conn.cursor()

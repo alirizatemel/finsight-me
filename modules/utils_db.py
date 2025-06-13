@@ -73,7 +73,7 @@ def load_active_portfolio_df() -> pd.DataFrame:
     """
     cols = [
         "hisse",  "lot", "maliyet",
-        "alis_tarihi", "satis_tarihi", "satis_fiyat", "graham_skor"
+        "alis_tarihi", "satis_tarihi", "satis_fiyat", "graham"
     ]
     try:
         return pd.read_sql("""
@@ -85,11 +85,11 @@ def load_active_portfolio_df() -> pd.DataFrame:
         p.alis_tarihi,
         p.satis_tarihi,
         p.satis_fiyat,
-        rs."Graham" AS graham_skor 
+        rs.graham 
     FROM
         portfolio p
     JOIN
-        radar_scores rs ON rs."Şirket" = p.hisse
+        radar_scores rs ON rs.hisse = p.hisse
     WHERE
         p.satis_fiyat IS NULL
 """, engine)[cols]

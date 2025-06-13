@@ -2,8 +2,8 @@ CREATE TABLE IF NOT EXISTS radar_scores (
     sirket          TEXT    PRIMARY KEY,
     f_skor          INTEGER,
     m_skor          NUMERIC,
-    graham_skor     INTEGER,
-    lynch_skor      INTEGER,
+    graham     INTEGER,
+    lynch      INTEGER,
     intrinsic       NUMERIC,          -- şirket toplam içsel değer
     intrinsic_ps    NUMERIC,          -- hisse başına içsel değer
     cur_price       NUMERIC,          -- güncel fiyat

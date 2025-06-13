@@ -3,17 +3,17 @@ SQL (run once):  VIEW v_portfolio_dashboard
 -------------------------------------------------
 CREATE OR REPLACE VIEW v_portfolio_dashboard AS
 WITH latest_scores AS (
-    SELECT DISTINCT ON ("Şirket")
-        "Şirket",
-        "Graham" AS graham_skor,
+    SELECT DISTINCT ON (hisse)
+        hisse,
+        graham AS graham_skor,
         "MOS"    AS mos,
         "timestamp"
     FROM   radar_scores
-    ORDER  BY "Şirket", "timestamp" DESC
+    ORDER  BY hisse, "timestamp" DESC
 )
 SELECT p.*, ls.graham_skor, ls.mos
 FROM   portfolio p
-LEFT   JOIN latest_scores ls ON ls."Şirket" = p.hisse;
+LEFT   JOIN latest_scores ls ON ls.hisse = p.hisse;
 """
 
 import streamlit as st #type: ignore
@@ -87,6 +87,8 @@ st.title("📋 Portföy Yönetimi")
 # ---------------------------------------------------------------------------
 try:
     df_all = pd.read_sql("SELECT * FROM portfolio ORDER BY alis_tarihi DESC", engine)
+    df_all["toplam_maliyet"] = df_all["maliyet"] * df_all["lot"]
+    df_all = df_all.sort_values(by="toplam_maliyet", ascending=False)
 except Exception:
     df_all = pd.DataFrame()
 

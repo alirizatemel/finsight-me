@@ -42,25 +42,50 @@ def get_radar() -> pd.DataFrame:
     df["Şirket"] = df["Şirket"].str.strip()
     return df
 
+def _fmt(val, pattern="{:+.2f}", default="-"):
+    """None, NaN veya sayı dışı değerleri güvenle biçimlendir."""
+    try:
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            raise ValueError
+        return pattern.format(val)
+    except (TypeError, ValueError):
+        return default
+
 def format_scores_for_clipboard(data: dict) -> str:
     s = data["scores"]
+
     lines = [
         f"**Şirket:** {data['company']}",
         f"**Dönem:** {data['periods']['current']}  (önceki: {data['periods']['previous']})",
         "",
-        f"**Piotroski F‑Score:** {s['piotroski_card']}",
-        "\n".join(f"- {k}: {'✅' if v=='✅' else '❌'}" for k, v in s["piotroski_detail"].items()),
+        f"**Piotroski F-Score:** {s.get('piotroski_card', '-')}",
+        "\n".join(f"- {k}: {'✅' if v=='✅' else '❌'}"
+                  for k, v in s.get('piotroski_detail', {}).items()),
         "",
-        f"**Beneish M‑Skor:** {s['beneish_card']} ({s['beneish']:+.2f})",
-        *[f"- {line}" for line in s["beneish_lines"]],
-        "",
-        f"**Graham Skoru:** {s['graham']} / 5",
-        *[f"- {line}" for line in s["graham_lines"]],
-        "",
-        f"**Peter Lynch Skoru:** {s['lynch']} / 3",
-        *[f"- {line}" for line in s["lynch_lines"]],
     ]
+
+    # Beneish (opsiyonel)
+    if s.get("beneish_card") is not None:
+        lines.append(
+            f"**Beneish M-Skor:** {s['beneish_card']} "
+            f"({_fmt(s.get('beneish'))})"
+        )
+        lines.extend(f"- {l}" for l in s.get("beneish_lines", []))
+        lines.append("")
+
+    # Graham
+    if "graham" in s:
+        lines.append(f"**Graham Skoru:** {s['graham']} / 5")
+        lines.extend(f"- {l}" for l in s.get("graham_lines", []))
+        lines.append("")
+
+    # Lynch
+    if "lynch" in s:
+        lines.append(f"**Peter Lynch Skoru:** {s['lynch']} / 3")
+        lines.extend(f"- {l}" for l in s.get("lynch_lines", []))
+
     return "\n".join(lines)
+
 
 def main():
     st.title("📈 Tek Hisse Finans Skor Kartı")
@@ -123,10 +148,25 @@ def main():
 
 
         # Sekmeler
-        tab_score, tab_fcf, tab_valuation, tab_raw = st.tabs(["📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", "🗂 Ham Veriler"])
-
+        tab_score, tab_fcf, tab_valuation = st.tabs(["📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", ])
+        
+        copy_details = None  # Başlangıçta None olarak ayarlayalım
+        
         with tab_score:
             copy_details=show_company_scorecard(symbol, radar_row, curr, prev)
+
+                    # ------------------------------------------------------------------
+            # 📋 2) add the “Skorları Kopyala” button in your main() just after
+            #        the metrics are rendered (still inside the if st.session_state.analyze block)
+            # ------------------------------------------------------------------
+            with st.container():  # keeps things visually grouped
+                st.markdown(f"📋 Skor Kartı")
+                with st.expander("⬇️ kopyalamak için tıkla", expanded=False):
+                    try:
+                        clip_text = format_scores_for_clipboard(copy_details)
+                        st.code(clip_text, language="markdown")
+                    except Exception as e:
+                        st.warning("Skor kartı kopyalanamadı: " + str(e))
 
         with tab_fcf:
             st.subheader("FCF Detay Tablosu")
@@ -206,13 +246,18 @@ def main():
                 shares_out = market_cap / cur_price                 # float shares
                 intrinsic_ps = intrinsic / shares_out               # per-share value
 
-                st.metric("Medyan İçsel Değer (TL / Hisse)",
-                        f"{intrinsic_ps:,.2f}")
+                price_col, value_col, gain_col = st.columns(3)
 
-                premium = (intrinsic_ps - cur_price) / cur_price * 100
-                
-                st.caption(f"🎯 Mevcut fiyat {cur_price:,.2f} TL — "
-                        f"potansiyel {premium:+.1f}%")
+                with price_col:
+                    st.metric("🎯 Mevcut Fiyat (TL)", f"{cur_price:,.2f}")
+
+                with value_col:
+                    st.metric("📊 Medyan İçsel Değer (TL)", f"{intrinsic_ps:,.2f}")
+
+                with gain_col:
+                    premium = (intrinsic_ps - cur_price) / cur_price * 100
+                    trend_emoji = "📈" if premium >= 0 else "📉"
+                    st.metric(f"{trend_emoji} Potansiyel Getiri (%)", f"{premium:+.1f}%")
             else:
                 # fallback: show company-wide value
                 st.metric("Medyan İçsel Değer (TL)",
@@ -226,20 +271,7 @@ def main():
             ax.set_title(f"{n_sims:,} Senaryoda Değer Dağılımı")
             st.pyplot(fig)
 
-        with tab_raw:
-            st.expander("Bilanço").dataframe(balance)
-            st.expander("Gelir Tablosu").dataframe(income)
-            st.expander("Nakit Akış Tablosu").dataframe(cashflow)
-        # ------------------------------------------------------------------
-        # 📋 2) add the “Skorları Kopyala” button in your main() just after
-        #        the metrics are rendered (still inside the if st.session_state.analyze block)
-        # ------------------------------------------------------------------
-        with st.container():  # keeps things visually grouped
-            st.markdown(f"📋 Skor Kartı")
-            with st.expander("⬇️ kopyalamak için tıkla", expanded=False):
-                clip_text = format_scores_for_clipboard(copy_details)
-                # st.code comes with a built‑in copy icon since Streamlit 1.28
-                st.code(clip_text, language="markdown")
+
 
 if __name__ == "__main__":
     main()

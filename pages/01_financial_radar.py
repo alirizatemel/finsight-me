@@ -159,22 +159,19 @@ else:
 score_df = df_scan     # rename for clarity below
 
 
-# Skor tablosunu göster
-symbol_col = (
-    "sirket" if "sirket" in score_df.columns
-    else "Şirket" if "Şirket" in score_df.columns
-    else None
-)
 
-if symbol_col is None:
-    st.error("❌ 'sirket' (veya 'Şirket') kolonu bulunamadı. Veri kaydedilememiş olabilir.")
+
+symbol_col = "hisse"
+
+if symbol_col not in score_df.columns:
+    st.error(f"❌ '{symbol_col}' kolonu bulunamadı. Veri kaydedilememiş olabilir.")
     st.stop()
 
 score_df["Link"] = "/stock_analysis?symbol=" + score_df[symbol_col]
 
 
 # Skor kolonlarını numeriğe çevir, olmayanlar NaN olur
-for col in ["F-Skor", "M-Skor", "Lynch", "Graham", "MOS"]:
+for col in ["f_skor", "m_skor", "lynch", "graham", "MOS"]:
     score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
 # MOS'u yalnızca 0–1 aralığında ise %'ye çevir
@@ -185,15 +182,15 @@ if "MOS_scaled" not in st.session_state:
 # --- Uygula / sıfırla filtre --------------------------------------------
 if apply:
     filtered_df = score_df[
-        (score_df["F-Skor"] >= f_min) & (score_df["F-Skor"] <= f_max) &
-        (score_df["M-Skor"] >= m_min) & (score_df["M-Skor"] <= m_max) &
-        (score_df["Lynch"] >= l_min) & (score_df["Lynch"] <= l_max) &
-        (score_df["Graham"] >= g_min) & (score_df["Graham"] <= g_max)
+        (score_df["f_skor"] >= f_min) & (score_df["f_skor"] <= f_max) &
+        (score_df["m_skor"] >= m_min) & (score_df["m_skor"] <= m_max) &
+        (score_df["lynch"] >= l_min) & (score_df["lynch"] <= l_max) &
+        (score_df["graham"] >= g_min) & (score_df["graham"] <= g_max)
     ]
     st.markdown(f"**🔎 Filtrelenmiş Şirket Sayısı:** {len(filtered_df)}")
     
     st.dataframe(
-        filtered_df.sort_values("F-Skor", ascending=False),
+        filtered_df.sort_values("f_skor", ascending=False),
         column_config={
             "Link": cc.LinkColumn(
                 label="Link",    # hangi kolon URL’yi tutuyor
@@ -213,7 +210,7 @@ else:
     st.markdown(f"**📋 Tüm Şirketler:** {len(score_df)}")
     #st.dataframe(score_df.sort_values("F-Skor", ascending=False), use_container_width=True)
     st.dataframe(
-        score_df.sort_values("F-Skor", ascending=False),
+        score_df.sort_values("f_skor", ascending=False),
         column_config={
             "Link": cc.LinkColumn(
                 label="Link",    # hangi kolon URL’yi tutuyor

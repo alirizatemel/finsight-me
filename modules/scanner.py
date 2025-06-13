@@ -65,11 +65,11 @@ def run_scan(
             l_score, *_       = lynch.LynchScorer(row).calculate()
 
             record = {
-                "Şirket": c,
-                "F-Skor": f_score,
-                "M-Skor": m_score,
-                "Graham": g_score,
-                "Lynch":  l_score,
+                "hisse": c,
+                "f_skor": f_score,
+                "m_skor": m_score,
+                "graham": g_score,
+                "lynch":  l_score,
             }
 
             # Optional MOS branch (Trap Radar view)
@@ -98,9 +98,9 @@ def run_scan(
                         premium = (intrinsic_ps - cur_price) / cur_price
 
                         record.update({
-                            "İçsel Değer (Medyan)": intrinsic,
-                            "Piyasa Değeri":        market_cap,
-                            "MOS":                  premium,
+                            "icsel_deger_medyan": intrinsic,    # Güncellendi
+                            "piyasa_degeri":      market_cap,   # Güncellendi
+                            "MOS":                premium,      # Zaten doğru
                         })
                 except Exception as mos_error:
                     logger.warning(f"{c}: MOS hesaplanamadı → {mos_error}")
@@ -129,7 +129,8 @@ def run_scan(
 
     if not df.empty:
         df["timestamp"] = datetime.now()
-        for col in ["MOS", "İçsel Değer (Medyan)", "Piyasa Değeri"]:
+        # Yeni kolon adları ile güncellendi
+        for col in ["MOS", "icsel_deger_medyan", "piyasa_degeri"]:
             if col not in df.columns:
                 df[col] = np.nan  # eksikse bile tüm satırlara NaN olarak ekle
 
