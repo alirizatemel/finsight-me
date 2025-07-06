@@ -52,6 +52,15 @@ def run_scan(
         try:
             row               = radar[radar["Şirket"] == c]
             bal, inc, cash    = load_financial_data(c)
+
+            if bal is None or inc is None or cash is None or bal.empty or inc.empty or cash.empty:
+                # Teknik loglama için
+                logger.warning(f"{c}: Finansal veri setlerinden biri (bilanço, gelir, nakit akış) boş veya eksik. Şirket atlanıyor.")
+                # UI'da göstermek için log listesine ekle
+                logs.append(f"{c}: Gerekli finansal veri (bilanço/gelir/nakit) bulunamadı, atlandı.")
+                counters["diğer"] += 1 # Atlanan şirketleri sayaca ekle
+                continue  # Bu şirketi işlemeyi bırak ve döngüde bir sonrakine geç
+            
             periods           = latest_common_period(bal, inc, cash)
             if len(periods) < 2:
                 raise ValueError("ortak dönem yok")

@@ -11,10 +11,6 @@ Dependencies (add to requirements.txt if missing):
     matplotlib
     streamlit>=1.33
 
-Folder expectations (override from sidebar if needed):
-    data/performans_log.xlsx   – daily position log (columns: Tarih, Hisse, Lot, Fiyat)
-    data/portfoy_verisi.xlsx   – portfolio snapshot (columns incl. Graham Skoru…)
-
 Author: ChatGPT (o3) – generated 2025‑05‑02
 """
 from __future__ import annotations
@@ -217,7 +213,7 @@ if page == "Performans":
     st.pyplot(fig)
 
 # ---------------------------------------------------------------------------
-# 💼 PORTFÖY ANALİZİ
+# 💼 PORTFÖY ANALİZİ (DAHA SAĞLAM HALE GETİRİLMİŞ VERSİYON)
 # ---------------------------------------------------------------------------
 else:
     df_port = load_portfolio()
@@ -226,89 +222,113 @@ else:
         st.stop()
 
     # Güncel fiyatları performans_log’tan çek
-    latest_prices = (
-        load_log()
-        .sort_values(["hisse", "tarih"])
-        .groupby("hisse")
-        .tail(1)
-        .set_index("hisse")["fiyat"]
-    )
-    df_port["Güncel Fiyat"] = df_port["Hisse"].map(latest_prices)
+    log_df = load_log()
+    if not log_df.empty:
+        latest_prices = (
+            log_df.sort_values(["hisse", "tarih"])
+            .groupby("hisse")
+            .tail(1)
+            .set_index("hisse")["fiyat"]
+        )
+        df_port["Güncel Fiyat"] = df_port["Hisse"].map(latest_prices)
+    else:
+        df_port["Güncel Fiyat"] = np.nan
 
     df_open, df_closed = enrich_portfolio(df_port)
 
+    # --- Değer ve Fon hisselerini ayıralım (GÜVENLİK KONTROLÜ EKLENDİ) ---
+    open_deger = pd.DataFrame()
+    closed_deger = pd.DataFrame()
+
+    # Eğer 'Graham Skoru' sütunu varsa, varlıkları buna göre ayır.
+    if "Graham Skoru" in df_open.columns:
+        open_deger = df_open[df_open["Graham Skoru"].notna()].copy()
+        open_fon = df_open[df_open["Graham Skoru"].isna()].copy()
+    else:
+        # Sütun hiç yoksa, tüm açık pozisyonlar fon/spekülatif kabul edilir.
+        st.warning("`Graham Skoru` sütunu portföy verisinde bulunamadı. Tüm varlıklar 'Fon / Spekülatif' olarak sınıflandırıldı.")
+        open_fon = df_open.copy()
+
+    if "Graham Skoru" in df_closed.columns:
+        closed_deger = df_closed[df_closed["Graham Skoru"].notna()].copy()
+        closed_fon = df_closed[df_closed["Graham Skoru"].isna()].copy()
+    else:
+        # Sütun hiç yoksa, tüm kapalı pozisyonlar fon/spekülatif kabul edilir.
+        closed_fon = df_closed.copy()
+    # ---------------------------------------------------------------------
+
     # ---- Değer Hisseleri – Açık ----
     st.subheader("🟢 Değer Hisseleri – Açık Pozisyonlar")
-    if df_open.empty:
+    if open_deger.empty:
         st.info("Açık değer hissesi pozisyonu yok.")
     else:
-        st.dataframe(
-            df_open[
-                [
-                    "Hisse",
-                    "Lot",
-                    "Maliyet",
-                    "Güncel Fiyat",
-                    "Kar/Zarar",
-                    "Kar/Zarar (%)",
-                    "Graham Skoru",
-                ]
-            ].round(2),
-            hide_index=True,
-        )
-        fig, ax = plt.subplots(figsize=(8, 4))
-        colors = ["green" if x > 0 else "red" for x in df_open["Kar/Zarar"]]
-        ax.scatter(df_open["Graham Skoru"], df_open["Kar/Zarar"], c=colors)
-        ax.set_xlabel("Graham Skoru")
-        ax.set_ylabel("Kar/Zarar (TL)")
-        ax.set_title("Graham Skoru vs Kar/Zarar – Açık Pozisyonlar")
-        st.pyplot(fig)
+        display_cols = [
+            "Hisse", "Lot", "Maliyet", "Güncel Fiyat",
+            "Kar/Zarar", "Kar/Zarar (%)", "Graham Skoru",
+        ]
+        st.dataframe(open_deger[display_cols].round(2), hide_index=True)
+        
+        plot_data = open_deger.dropna(subset=['Güncel Fiyat', 'Kar/Zarar', 'Graham Skoru'])
+        if not plot_data.empty:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            colors = ["green" if x > 0 else "red" for x in plot_data["Kar/Zarar"]]
+            ax.scatter(plot_data["Graham Skoru"], plot_data["Kar/Zarar"], c=colors)
+            ax.set_xlabel("Graham Skoru")
+            ax.set_ylabel("Kar/Zarar (TL)")
+            ax.set_title("Graham Skoru vs Kar/Zarar – Açık Pozisyonlar")
+            st.pyplot(fig)
 
     st.divider()
 
     # ---- Değer Hisseleri – Kapalı ----
     st.subheader("📘 Değer Hisseleri – Satışı Yapılmış Pozisyonlar")
-    if df_closed.empty:
+    if closed_deger.empty:
         st.info("Satılmış değer hissesi pozisyonu yok.")
     else:
         st.dataframe(
-            df_closed[
+            closed_deger[
                 [
-                    "Hisse",
-                    "Lot",
-                    "Maliyet",
-                    "Satış Fiyatı",
-                    "Gerçekleşen Kar/Zarar",
-                    "Kar/Zarar (%)",
+                    "Hisse", "Lot", "Maliyet", "Satış Fiyatı",
+                    "Gerçekleşen Kar/Zarar", "Kar/Zarar (%)",
                 ]
             ].round(2),
             hide_index=True,
         )
         fig, ax = plt.subplots(figsize=(8, 4))
-        colors = ["green" if x > 0 else "red" for x in df_closed["Gerçekleşen Kar/Zarar"]]
-        ax.bar(df_closed["hisse"], df_closed["Gerçekleşen Kar/Zarar"], color=colors)
+        colors = ["green" if x > 0 else "red" for x in closed_deger["Gerçekleşen Kar/Zarar"]]
+        ax.bar(closed_deger["Hisse"], closed_deger["Gerçekleşen Kar/Zarar"], color=colors)
         ax.set_ylabel("TL")
         ax.set_title("Net Kar/Zarar – Satılmış Değer Hisseleri")
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
         st.pyplot(fig)
 
-        # ---- Fon/Spekülatif – Genel ----
-        st.divider()
-        st.subheader("🟡 Fon / Spekülatif Varlıklar")
+    st.divider()
 
-        # classify on the fly – no extra column needed
-        df_fon = df_port[df_port["Graham Skoru"].isna()].copy()   # ← changed line
+    # ---- Fon/Spekülatif – Genel ----
+    st.subheader("🟡 Fon / Spekülatif Varlıklar")
+    df_fon_all = pd.concat([open_fon, closed_fon], ignore_index=True)
 
-        if df_fon.empty:
-            st.info("Fon/spekülatif varlık pozisyonu yok.")
-        else:
-            st.dataframe(df_fon.round(2), hide_index=True)
+    if df_fon_all.empty:
+        st.info("Fon/spekülatif varlık pozisyonu yok.")
+    else:
+        display_cols = [
+            "Hisse", "Lot", "Maliyet", "Güncel Fiyat", "Satış Fiyatı",
+            "Kar/Zarar", "Gerçekleşen Kar/Zarar"
+        ]
+        # Sadece var olan sütunları göster
+        display_cols_exist = [col for col in display_cols if col in df_fon_all.columns]
+        st.dataframe(df_fon_all[display_cols_exist].round(2), hide_index=True)
+
+        df_fon_all['Net Kar/Zarar'] = df_fon_all['Kar/Zarar'].fillna(df_fon_all['Gerçekleşen Kar/Zarar']).fillna(0)
+        
+        if not df_fon_all.empty:
             fig, ax = plt.subplots(figsize=(8, 4))
-            colors = ["green" if x > 0 else "red" for x in df_fon["Kar / Zarar"].fillna(0)]
-            ax.bar(df_fon["hisse"], df_fon["Kar / Zarar"].fillna(0), color=colors)
+            colors = ["green" if x > 0 else "red" for x in df_fon_all["Net Kar/Zarar"]]
+            ax.bar(df_fon_all["Hisse"], df_fon_all["Net Kar/Zarar"], color=colors)
             ax.set_ylabel("TL")
-            ax.set_title("Fon / Spekülatif – Kar/Zarar")
+            ax.set_title("Fon / Spekülatif – Net Kar/Zarar")
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
             st.pyplot(fig)
-
 # ---------------------------------------------------------------------------
 # 📑 Footer
 # ---------------------------------------------------------------------------
