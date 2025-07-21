@@ -1,7 +1,9 @@
-import streamlit as st  # type: ignore
+# 03_stock_analysis.py (Teknik Analiz Entegreli)
+
+import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt  # type: ignore
+import matplotlib.pyplot as plt
 from modules.data_loader import load_financial_data
 from modules.scores import (
     calculate_scores,
@@ -15,6 +17,107 @@ from modules.scores import (
 )
 from config import RADAR_XLSX
 
+# YENİ EKLENDİ: Teknik analiz için gerekli kütüphaneler
+import os
+from datetime import datetime, timedelta
+from isyatirimhisse import StockData
+import pandas_ta as ta
+
+
+# --- YENİ FONKSİYONLAR: Teknik Analiz için eklendi ---
+
+@st.cache_data(show_spinner="Teknik veriler çekiliyor ve önbelleğe alınıyor...")
+def get_cached_or_fetch(symbol: str, days: int = 200) -> pd.DataFrame:
+    """
+    Hisse senedi fiyat verisini 'isyatirimhisse'den çeker veya yerel parquet önbelleğinden okur.
+    `10_tech_radar.py` dosyasından alınmıştır.
+    """
+    cache_dir = "data_cache"
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"{symbol}.parquet")
+
+    # Önbelleği kontrol et
+    if os.path.exists(cache_path):
+        try:
+            df = pd.read_parquet(cache_path)
+            if not df.empty:
+                df.index = pd.to_datetime(df.index)
+                last_date = df.index.max().date()
+                today = pd.Timestamp.now().date()
+                if last_date >= today - timedelta(days=1):
+                    return df
+        except Exception:
+            pass # Bozuk dosya varsa yeniden çek
+
+    # Veriyi çek
+    sd = StockData()
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=days)
+    df_all = sd.get_data(
+        symbols=[symbol],
+        start_date=start_date.strftime("%d-%m-%Y"),
+        end_date=end_date.strftime("%d-%m-%Y"),
+        frequency="1d",
+        return_type="0",
+    )
+    if df_all is None or df_all.empty:
+        return pd.DataFrame()
+
+    df_all.rename(columns={
+        "CLOSING_TL": "close", "HIGH_TL": "high", "LOW_TL": "low",
+        "VOLUME_TL": "volume", "DATE": "date", "CODE": "symbol"
+    }, inplace=True)
+
+    df_all["date"] = pd.to_datetime(df_all["date"])
+    df_all.set_index("date", inplace=True)
+    df_all.sort_index(inplace=True)
+    df_all.to_parquet(cache_path)
+    return df_all
+
+@st.cache_data(show_spinner=False) # Üst fonksiyon zaten spinner gösteriyor
+def apply_technical_filters(_df_price: pd.DataFrame) -> dict:
+    """
+    Fiyat verisi üzerinden teknik göstergeleri hesaplar.
+    `10_tech_radar.py` dosyasından alınıp grafik için SMA'ları da döndürecek şekilde güncellendi.
+    """
+    df_price = _df_price.copy()
+    if df_price.empty or "close" not in df_price:
+        return {"RSI": np.nan, "Trend": "YOK", "SMA20": None, "SMA50": None}
+
+    close = df_price["close"].dropna()
+    if len(close) < 50:
+        return {"RSI": np.nan, "Trend": "YETERSIZ VERI", "SMA20": None, "SMA50": None}
+
+    rsi_val = ta.rsi(close, length=14).dropna()
+    rsi = round(rsi_val.iloc[-1], 1) if not rsi_val.empty else np.nan
+
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    
+    # DataFrame'e ekle
+    df_price['SMA20'] = sma20
+    df_price['SMA50'] = sma50
+
+    trend = "YOK"
+    try:
+        prev_sma20 = sma20.iloc[-2]
+        prev_sma50 = sma50.iloc[-2]
+        curr_sma20 = sma20.iloc[-1]
+        curr_sma50 = sma50.iloc[-1]
+
+        if prev_sma20 < prev_sma50 and curr_sma20 > curr_sma50:
+            trend = "🔁 TREND DÖNÜŞÜ (Al Sinyali)"
+        elif curr_sma20 > curr_sma50:
+            trend = "📈 YUKARI"
+        else:
+            trend = "📉 AŞAĞI"
+    except IndexError:
+        trend = "YETERSIZ VERI"
+
+    return {"RSI": rsi, "Trend": trend, "price_df": df_price}
+
+# -----------------------------------------------------------
+
 def latest_common_period(balance, income, cashflow):
     bal_periods = {c for c in balance.columns if "/" in c}
     inc_periods = {c for c in income.columns  if "/" in c}
@@ -22,8 +125,7 @@ def latest_common_period(balance, income, cashflow):
     return sorted(bal_periods & inc_periods & cf_periods,
                   key=period_order, reverse=True)
 
-# --- yeni, önerilen yöntem -----------------------
-params = st.query_params          # doğrudan Mapping[str, str]
+params = st.query_params
 default_symbol = params.get("symbol", "").upper()
 
 @st.cache_data(show_spinner=False)
@@ -32,18 +134,15 @@ def get_scores_cached(symbol, radar_row, balance, income, cashflow, curr, prev):
 
 @st.cache_data(show_spinner=False)
 def get_financials(symbol: str):
-    """Load balance, income, and cash‑flow sheets for a single ticker."""
     return load_financial_data(symbol)
 
 @st.cache_data(show_spinner=False)
 def get_radar() -> pd.DataFrame:
-    """Read the pre‑built fintables_radar Excel once and cache it."""
     df = pd.read_excel(RADAR_XLSX)
     df["Şirket"] = df["Şirket"].str.strip()
     return df
 
 def _fmt(val, pattern="{:+.2f}", default="-"):
-    """None, NaN veya sayı dışı değerleri güvenle biçimlendir."""
     try:
         if val is None or (isinstance(val, float) and np.isnan(val)):
             raise ValueError
@@ -63,8 +162,6 @@ def format_scores_for_clipboard(data: dict) -> str:
                   for k, v in s.get('piotroski_detail', {}).items()),
         "",
     ]
-
-    # Beneish (opsiyonel)
     if s.get("beneish_card") is not None:
         lines.append(
             f"**Beneish M-Skor:** {s['beneish_card']} "
@@ -72,14 +169,10 @@ def format_scores_for_clipboard(data: dict) -> str:
         )
         lines.extend(f"- {l}" for l in s.get("beneish_lines", []))
         lines.append("")
-
-    # Graham
     if "graham" in s:
         lines.append(f"**Graham Skoru:** {s['graham']} / 5")
         lines.extend(f"- {l}" for l in s.get("graham_lines", []))
         lines.append("")
-
-    # Lynch
     if "lynch" in s:
         lines.append(f"**Peter Lynch Skoru:** {s['lynch']} / 3")
         lines.extend(f"- {l}" for l in s.get("lynch_lines", []))
@@ -88,37 +181,32 @@ def format_scores_for_clipboard(data: dict) -> str:
 
 
 def main():
-    st.title("📈 Tek Hisse Finans Skor Kartı")
+    st.title("📈 Tek Hisse Analiz Platformu (Temel + Teknik)")
 
-    # Kullanıcı girişi
     symbol = st.text_input("Borsa Kodu", default_symbol).strip().upper()
     if not symbol:
         st.info("Lütfen geçerli bir borsa kodu girin.")
         st.stop()
 
-    # Finansalları yükle
     try:
         balance, income, cashflow = get_financials(symbol)
     except FileNotFoundError:
-        st.error(f"{symbol} verileri bulunamadı.")
+        st.error(f"{symbol} için finansal veriler bulunamadı. Fintables'tan indirdiğinizden emin olun.")
         st.stop()
 
-    # --- DÖNEM KONTROLÜ ------------------------------------------
     periods = latest_common_period(balance, income, cashflow)
     if len(periods) < 2:
-        st.error("Üç temel tabloda da en az iki ortak dönem lazım.")
+        st.error("Üç temel tabloda da en az iki ortak dönem bulunamadı.")
         st.stop()
 
-    curr, prev = periods[:2]          # en yeni ve bir önceki
+    curr, prev = periods[:2]
     st.info(f"🔎 Kullanılan son bilanço dönemi: **{curr}**")
 
-    # Radar satırı
     radar_df = get_radar()
     radar_row = radar_df[radar_df["Şirket"] == symbol]
     if radar_row.empty:
-        st.warning("Radar verisi bulunamadı; bazı skorlar eksik hesaplanabilir.")
+        st.warning("Radar verisi bulunamadı; bazı skorlar ve değerleme eksik hesaplanabilir.")
 
-    # Analiz başlatma kontrolü
     if "analyze" not in st.session_state:
         st.session_state.analyze = False
 
@@ -126,40 +214,39 @@ def main():
         st.session_state.analyze = True
 
     if st.session_state.analyze:
-        scores = get_scores_cached(symbol, radar_row, balance, income, cashflow, curr, prev)
+        with st.spinner("Finansal skorlar hesaplanıyor..."):
+            scores = get_scores_cached(symbol, radar_row, balance, income, cashflow, curr, prev)
+        
+        # YENİ: Teknik analiz verilerini çek
+        with st.spinner("Teknik göstergeler hesaplanıyor..."):
+            df_price_raw = get_cached_or_fetch(symbol)
+            tech_indicators = apply_technical_filters(df_price_raw)
+            df_price_tech = tech_indicators.get("price_df")
 
-        # Özet metrikler
+
         col1, col2 = st.columns(2)
-
         with col1:
             st.metric("Piotroski F-Skor", f"{scores['f_score']} / 9")
             st.caption("🟢 Sağlam" if scores["f_score"] >= 7 else "🟡 Orta" if scores["f_score"] >= 4 else "🔴 Zayıf")
-
             mskor = scores["m_skor"]
             st.metric("Beneish M-Skor", f"{mskor:.2f}" if mskor is not None else "-")
             st.caption("🟢 Güvenilir" if mskor is not None and mskor < -2.22 else "🔴 Riskli")
-
         with col2:
             st.metric("Graham Skor", f"{scores['graham_skor']} / 5")
             st.caption("🟢 Güçlü" if scores["graham_skor"] >= 4 else "🟡 Sınırlı" if scores["graham_skor"] == 3 else "🔴 Zayıf")
-
             st.metric("Peter Lynch Skor", f"{scores['lynch_skor']} / 3")
             st.caption("🟢 Sağlam" if scores["lynch_skor"] == 3 else "🟡 Orta" if scores["lynch_skor"] == 2 else "🔴 Zayıf")
 
-
-        # Sekmeler
-        tab_score, tab_fcf, tab_valuation = st.tabs(["📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", ])
+        # DEĞİŞTİRİLDİ: Yeni sekme eklendi
+        tab_score, tab_fcf, tab_valuation, tab_tech = st.tabs([
+            "📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", "📈 Teknik Analiz"
+        ])
         
-        copy_details = None  # Başlangıçta None olarak ayarlayalım
+        copy_details = None
         
         with tab_score:
             copy_details=show_company_scorecard(symbol, radar_row, curr, prev)
-
-                    # ------------------------------------------------------------------
-            # 📋 2) add the “Skorları Kopyala” button in your main() just after
-            #        the metrics are rendered (still inside the if st.session_state.analyze block)
-            # ------------------------------------------------------------------
-            with st.container():  # keeps things visually grouped
+            with st.container():
                 st.markdown(f"📋 Skor Kartı")
                 with st.expander("⬇️ kopyalamak için tıkla", expanded=False):
                     try:
@@ -174,10 +261,8 @@ def main():
             if df_fcf is not None:
                 with st.expander("📊 FCF Detay Tablosu", expanded=False):
                     st.dataframe(df_fcf.style.format({"FCF Verimi (%)": "{:.2f}"}))
-
                 st.subheader("FCF Verimi Grafiği")
                 fcf_yield_time_series(symbol, radar_row)
-
                 st.subheader("FCF + Satışlar + CAPEX Çoklu Grafik")
                 fcf_detailed_analysis_plot(symbol, radar_row)
             else:
@@ -185,92 +270,79 @@ def main():
         
         with tab_valuation:
             st.subheader("Monte Carlo Destekli DCF")
-
-            # Son 12 ay FCF’i çek (yıllıklandırılmış)
             df_fcf = fcf_detailed_analysis(symbol, radar_row)
             if df_fcf is None or df_fcf.empty:
-                st.info("FCF verileri eksik.")
-                st.stop()
-
-            # --- trailing-12-month FCF (TTM) ------------------------------------
-            if len(df_fcf) >= 4:
-                last_fcf = df_fcf["FCF"].iloc[-4:].sum()   # TTM: son 4 çeyrek toplamı
+                st.info("Değerleme için FCF verileri eksik.")
             else:
-                last_fcf = df_fcf["FCF"].iloc[-1]          # fallback: tek dönem
+                if len(df_fcf) >= 4:
+                    last_fcf = df_fcf["FCF"].iloc[-4:].sum()
+                else:
+                    last_fcf = df_fcf["FCF"].iloc[-1]
+                
+                if last_fcf <= 0:
+                    st.warning("Son FCF negatif veya sıfır, değerleme anlamsız.")
+                else:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        wacc_mu = st.slider("Ortalama WACC (%)", 5.0, 25.0, 15.0, 0.5, key="wacc") / 100
+                        g_mu = st.slider("Terminal Büyüme (%)", 0.0, 10.0, 4.0, 0.1, key="g") / 100
+                    with col2:
+                        n_sims = st.number_input("Simülasyon Sayısı", 1000, 50000, 10000, 1000, "%d")
+                        years = st.slider("Projeksiyon Yılı", 3, 10, 5)
 
-            if last_fcf <= 0:
-                st.warning("Son FCF negatif veya sıfır, değerleme anlamsız.")
-                st.stop()
+                    sim_vals = monte_carlo_dcf_simple(last_fcf, years, int(n_sims), wacc_mu, g_mu)
+                    intrinsic = np.median(sim_vals)
 
-            # Kontroller
-            col1, col2 = st.columns(2)
-            with col1:
-                wacc_mu = st.slider("Ortalama WACC (%)", 5.0, 25.0, 15.0, 0.5) / 100
-                g_mu    = st.slider("Terminal Büyüme (%)", 0.0, 10.0, 4.0, 0.1) / 100
-            with col2:
-                n_sims = st.number_input(
-                    "Simülasyon Sayısı",
-                    min_value=1000,
-                    max_value=50000,
-                    value=10000,
-                    step=1000,
-                    format="%d",          # opsiyonel: tam sayı formatı
-                )
-                years  = st.slider("Projeksiyon Yılı", 3, 10, 5)
+                    cur_price = radar_row.get("Son Fiyat", pd.Series(dtype=float)).iat[0] if "Son Fiyat" in radar_row else None
+                    market_cap = radar_row.get("Piyasa Değeri", pd.Series(dtype=float)).iat[0] if "Piyasa Değeri" in radar_row else None
 
-            sim_vals = monte_carlo_dcf_simple(
-                last_fcf,
-                forecast_years=years,
-                n_sims=int(n_sims),
-                wacc_mu=wacc_mu, g_mu=g_mu,
-            )
-            # sim_vals = monte_carlo_dcf_jump_diffusion(
-            #     last_fcf,
-            #     forecast_years=years,
-            #     n_sims=int(n_sims),
-            #     wacc_mu=wacc_mu, g_mu=g_mu,
-            # )
+                    if cur_price and market_cap and market_cap > 0:
+                        shares_out = market_cap / cur_price
+                        intrinsic_ps = intrinsic / shares_out
+                        price_col, value_col, gain_col = st.columns(3)
+                        with price_col: st.metric("🎯 Mevcut Fiyat (TL)", f"{cur_price:,.2f}")
+                        with value_col: st.metric("📊 Medyan İçsel Değer (TL)", f"{intrinsic_ps:,.2f}")
+                        with gain_col:
+                            premium = (intrinsic_ps - cur_price) / cur_price * 100
+                            st.metric(f"{'📈' if premium >= 0 else '📉'} Potansiyel Getiri (%)", f"{premium:+.1f}%")
+                    else:
+                        st.metric("Medyan İçsel Değer (TL)", f"{intrinsic:,.0f}")
 
-            # Sonuçları göster
-            intrinsic = np.median(sim_vals)
-            st.metric("Medyan İçsel Değer (TL)", f"{intrinsic:,.0f}")
+                    fig, ax = plt.subplots(figsize=(7, 4))
+                    ax.hist(sim_vals, bins=50, alpha=0.8, color='skyblue', edgecolor='black')
+                    ax.axvline(intrinsic, color='red', linestyle='--', label=f'Medyan: {intrinsic:,.0f} TL')
+                    ax.set_xlabel("İçsel Değer (TL)"); ax.set_ylabel("Sıklık")
+                    ax.set_title(f"{n_sims:,} Senaryoda Değer Dağılımı"); ax.legend()
+                    st.pyplot(fig)
+        
+        # YENİ EKLENDİ: Teknik Analiz sekmesinin içeriği
+        with tab_tech:
+            st.subheader("Teknik Göstergeler")
+            if df_price_tech is not None and not df_price_tech.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    rsi_val = tech_indicators.get('RSI')
+                    st.metric("RSI (14)", f"{rsi_val:.1f}" if pd.notna(rsi_val) else "Hesaplanamadı")
+                    if pd.notna(rsi_val):
+                        if rsi_val > 70: rsi_caption = "🔴 Aşırı Alım Bölgesi"
+                        elif rsi_val < 30: rsi_caption = "🟢 Aşırı Satım Bölgesi"
+                        else: rsi_caption = "⚪ Nötr Bölge"
+                        st.caption(rsi_caption)
+                
+                with col2:
+                    trend_val = tech_indicators.get('Trend')
+                    st.metric("SMA 20/50 Trendi", trend_val)
+                    st.caption("20 günlük ortalamanın 50 günlük ortalamaya göre konumu")
 
-            # --- convert EV → intrinsic value per share -------------------------------
-            cur_price = radar_row.get("Son Fiyat", pd.Series(dtype=float)).iat[0] \
-                        if "Son Fiyat" in radar_row else None
+                st.subheader("Fiyat ve Hareketli Ortalamalar Grafiği")
+                
+                # Sadece ilgili sütunları ve son 1 yıllık veriyi alalım
+                chart_df = df_price_tech[['close', 'SMA20', 'SMA50']].tail(252)
+                st.line_chart(chart_df)
+                st.caption("MAVI: Kapanış Fiyatı, TURUNCU: 20 Günlük Basit Ort., YEŞİL: 50 Günlük Basit Ort.")
 
-            market_cap = radar_row.get("Piyasa Değeri", pd.Series(dtype=float)).iat[0] \
-                        if "Piyasa Değeri" in radar_row else None
-
-            if cur_price and market_cap and market_cap > 0:
-                shares_out = market_cap / cur_price                 # float shares
-                intrinsic_ps = intrinsic / shares_out               # per-share value
-
-                price_col, value_col, gain_col = st.columns(3)
-
-                with price_col:
-                    st.metric("🎯 Mevcut Fiyat (TL)", f"{cur_price:,.2f}")
-
-                with value_col:
-                    st.metric("📊 Medyan İçsel Değer (TL)", f"{intrinsic_ps:,.2f}")
-
-                with gain_col:
-                    premium = (intrinsic_ps - cur_price) / cur_price * 100
-                    trend_emoji = "📈" if premium >= 0 else "📉"
-                    st.metric(f"{trend_emoji} Potansiyel Getiri (%)", f"{premium:+.1f}%")
             else:
-                # fallback: show company-wide value
-                st.metric("Medyan İçsel Değer (TL)",
-                        f"{intrinsic:,.0f}")
-
-
-            fig, ax = plt.subplots(figsize=(7,4))
-            ax.hist(sim_vals, bins=50)
-            ax.set_xlabel("İçsel Değer (TL)")
-            ax.set_ylabel("Sıklık")
-            ax.set_title(f"{n_sims:,} Senaryoda Değer Dağılımı")
-            st.pyplot(fig)
-
+                st.warning(f"'{symbol}' için teknik analiz verisi çekilemedi.")
 
 
 if __name__ == "__main__":

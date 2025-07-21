@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from isyatirimhisse import StockData
+from isyatirimhisse import fetch_stock_data
 
 def main():
     """
     isyatirimhisse kütüphanesinin temel çalışmasını test etmek için
     basit bir Streamlit arayüzü.
     """
-    
+
     # Sayfa başlığı ve açıklaması
     st.set_page_config(page_title="İş Yatırım Kütüphane Testi", layout="centered")
     st.title("`isyatirimhisse` Kütüphanesi Test Aracı")
@@ -30,18 +30,16 @@ def main():
         # Kullanıcıya işlem yapıldığını bildirmek için spinner
         with st.spinner(f"'{symbol}' için son 30 günlük veri çekiliyor..."):
             try:
-                # Kütüphane sınıfını başlat
-                sd = StockData()
-
                 # Tarih aralığını belirle (son 30 gün)
                 end_date = datetime.today()
                 start_date = end_date - timedelta(days=30)
-                
+
                 # Veriyi çek
-                df = sd.get_data(
-                    symbols=[symbol],
+                df = fetch_stock_data(
+                    symbols=symbol,
                     start_date=start_date.strftime("%d-%m-%Y"),
-                    end_date=end_date.strftime("%d-%m-%Y")
+                    end_date=end_date.strftime("%d-%m-%Y"),
+                    save_to_excel=False
                 )
 
                 # 3. Sonucu kontrol et ve göster
@@ -55,7 +53,7 @@ def main():
                         f"❌ **Başarısız!** '{symbol}' için veri alınamadı. "
                         "Hisse kodu geçersiz olabilir veya API geçici olarak yanıt vermiyor olabilir."
                     )
-            
+
             except Exception as e:
                 # 5. Beklenmedik bir hata durumunu bildir
                 st.error("Beklenmedik bir hata oluştu. İnternet bağlantınızı kontrol edin.")

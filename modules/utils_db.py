@@ -126,3 +126,18 @@ def upsert_portfolio(df: pd.DataFrame,
     """
     with engine.begin() as conn:
         conn.execute(text(insert_sql), df.to_dict("records"))
+
+def load_filtered_radar_scores(
+    f_min=5, graham_min=2, lynch_min=1, m_max=-1.78, mos_min=20.0
+) -> pd.DataFrame:
+    query = f"""
+    SELECT hisse, f_skor, m_skor, graham, lynch,
+           icsel_deger_medyan, piyasa_degeri, "MOS", "timestamp"
+    FROM public.radar_scores
+    WHERE f_skor >= {f_min}
+       AND graham >= {graham_min}
+       AND lynch >= {lynch_min}
+    """
+    return pd.read_sql(query, engine)
+
+

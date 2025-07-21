@@ -1,5 +1,6 @@
 # Çalışma klasörleri hariç tutuluyor
 data/
+data_cache/
 sample_data/
 
 # __pycache__ ve Python derleyici artıkları
