@@ -12,67 +12,11 @@ from modules.scores import (
     fcf_detailed_analysis,
     fcf_detailed_analysis_plot,
     fcf_yield_time_series,
-    monte_carlo_dcf_simple,
-    monte_carlo_dcf_jump_diffusion
+    monte_carlo_dcf_simple
 )
+from modules.data_fetcher import fetch_and_process_stock_data
 from config import RADAR_XLSX
-
-# YENİ EKLENDİ: Teknik analiz için gerekli kütüphaneler
-import os
-from datetime import datetime, timedelta
-from isyatirimhisse import StockData
 import pandas_ta as ta
-
-
-# --- YENİ FONKSİYONLAR: Teknik Analiz için eklendi ---
-
-@st.cache_data(show_spinner="Teknik veriler çekiliyor ve önbelleğe alınıyor...")
-def get_cached_or_fetch(symbol: str, days: int = 200) -> pd.DataFrame:
-    """
-    Hisse senedi fiyat verisini 'isyatirimhisse'den çeker veya yerel parquet önbelleğinden okur.
-    `10_tech_radar.py` dosyasından alınmıştır.
-    """
-    cache_dir = "data_cache"
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f"{symbol}.parquet")
-
-    # Önbelleği kontrol et
-    if os.path.exists(cache_path):
-        try:
-            df = pd.read_parquet(cache_path)
-            if not df.empty:
-                df.index = pd.to_datetime(df.index)
-                last_date = df.index.max().date()
-                today = pd.Timestamp.now().date()
-                if last_date >= today - timedelta(days=1):
-                    return df
-        except Exception:
-            pass # Bozuk dosya varsa yeniden çek
-
-    # Veriyi çek
-    sd = StockData()
-    end_date = datetime.today()
-    start_date = end_date - timedelta(days=days)
-    df_all = sd.get_data(
-        symbols=[symbol],
-        start_date=start_date.strftime("%d-%m-%Y"),
-        end_date=end_date.strftime("%d-%m-%Y"),
-        frequency="1d",
-        return_type="0",
-    )
-    if df_all is None or df_all.empty:
-        return pd.DataFrame()
-
-    df_all.rename(columns={
-        "CLOSING_TL": "close", "HIGH_TL": "high", "LOW_TL": "low",
-        "VOLUME_TL": "volume", "DATE": "date", "CODE": "symbol"
-    }, inplace=True)
-
-    df_all["date"] = pd.to_datetime(df_all["date"])
-    df_all.set_index("date", inplace=True)
-    df_all.sort_index(inplace=True)
-    df_all.to_parquet(cache_path)
-    return df_all
 
 @st.cache_data(show_spinner=False) # Üst fonksiyon zaten spinner gösteriyor
 def apply_technical_filters(_df_price: pd.DataFrame) -> dict:
@@ -219,7 +163,7 @@ def main():
         
         # YENİ: Teknik analiz verilerini çek
         with st.spinner("Teknik göstergeler hesaplanıyor..."):
-            df_price_raw = get_cached_or_fetch(symbol)
+            df_price_raw = fetch_and_process_stock_data(symbol)
             tech_indicators = apply_technical_filters(df_price_raw)
             df_price_tech = tech_indicators.get("price_df")
 

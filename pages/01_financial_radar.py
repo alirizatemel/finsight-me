@@ -96,7 +96,7 @@ else:
 
 st.sidebar.header("🔍 Skor Filtreleri")
 
-with st.sidebar.expander("Filtreler", expanded=True):
+with st.sidebar.expander("Filtreler", expanded=False):
     f_min, f_max = st.slider("F-Skor Aralığı", 0, 9, (0, 9), key="f")
     m_min, m_max = st.slider("M-Skor Aralığı", -5.0, 5.0, (-5.0, 5.0), 0.1, key="m")
     l_min, l_max = st.slider("Lynch Aralığı", 0, 3, (0, 3), key="l")

@@ -14,7 +14,6 @@ with st.sidebar:
 
     st.markdown("### 🔍 Analysis Tools")
     st.page_link("pages/01_financial_radar.py", label="Financial Radar")
-    st.page_link("pages/02_trap_radar.py", label="Trap Radar")
     st.page_link("pages/03_stock_analysis.py", label="Stock Analysis")
 
     st.markdown("### 📥 Data")
