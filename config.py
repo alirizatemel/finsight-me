@@ -13,6 +13,8 @@ SON_BILANCOLAR_JSON = DATA_DIR / "son_bilancolar.json"
 
 RADAR_XLSX = DATA_DIR / "fintables_radar.xlsx"
 
+PG_URL = "postgresql://postgres:secret@localhost:5432/fin_db"
+
 BENCHMARK_RETURN_PCT = 4.2
 
 PERIODS = [

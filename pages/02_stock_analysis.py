@@ -1,5 +1,3 @@
-# 03_stock_analysis.py (Teknik Analiz Entegreli)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,6 +13,7 @@ from modules.scores import (
     monte_carlo_dcf_simple
 )
 from modules.data_fetcher import fetch_and_process_stock_data
+from modules.cache_manager import get_price_df
 from config import RADAR_XLSX
 import pandas_ta as ta
 
@@ -163,7 +162,7 @@ def main():
         
         # YENİ: Teknik analiz verilerini çek
         with st.spinner("Teknik göstergeler hesaplanıyor..."):
-            df_price_raw = fetch_and_process_stock_data(symbol)
+            df_price_raw = get_price_df(symbol)
             tech_indicators = apply_technical_filters(df_price_raw)
             df_price_tech = tech_indicators.get("price_df")
 

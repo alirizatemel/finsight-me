@@ -1,11 +1,24 @@
 from sqlalchemy import create_engine, text  #type: ignore
 import pandas as pd
-from typing import Optional
+from typing import Optional, Iterable, Mapping
 from modules.logger import logger 
+from config import PG_URL
 
 # use env‑vars for secrets
-PG_URL = "postgresql://postgres:secret@localhost:5432/fin_db"
+
 engine = create_engine(PG_URL, pool_pre_ping=True)
+
+def read_df(sql: str, params: Optional[Mapping] = None) -> pd.DataFrame:
+    """Parametreli sorgu ile DataFrame döndür."""
+    with engine.connect() as conn:
+        return pd.read_sql(text(sql), conn, params=params)
+
+def execute_many(sql: str, rows: Iterable[Mapping]) -> None:
+    rows = list(rows)
+    if not rows:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(sql), rows)
 
 def scores_table_empty(table: str = "trap") -> bool:
     query = f"SELECT COUNT(*) FROM {table}"
@@ -140,4 +153,32 @@ def load_filtered_radar_scores(
     """
     return pd.read_sql(query, engine)
 
+
+def save_trend_score(symbol: str, date: pd.Timestamp, metrics: dict) -> None:
+    """
+    trend_scores (symbol, date) üzerine upsert.
+    Şema varsayımı:
+      trend_scores(symbol TEXT, date DATE, rsi REAL, sma20 REAL, sma50 REAL, trend TEXT, created_at TIMESTAMPTZ DEFAULT now(),
+                   UNIQUE(symbol, date))
+    """
+    sql = """
+    INSERT INTO trend_scores (symbol, date, rsi, sma20, sma50, trend, created_at)
+    VALUES (:symbol, :date, :rsi, :sma20, :sma50, :trend, NOW())
+    ON CONFLICT (symbol, date)
+    DO UPDATE SET
+        rsi   = EXCLUDED.rsi,
+        sma20 = EXCLUDED.sma20,
+        sma50 = EXCLUDED.sma50,
+        trend = EXCLUDED.trend,
+        created_at = NOW();
+    """
+    row = {
+        "symbol": symbol,
+        "date": pd.to_datetime(date).date(),
+        "rsi":  metrics.get("rsi"),
+        "sma20": metrics.get("sma20"),
+        "sma50": metrics.get("sma50"),
+        "trend": metrics.get("trend"),
+    }
+    execute_many(sql, [row])
 

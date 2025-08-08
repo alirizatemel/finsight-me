@@ -11,7 +11,7 @@ from tenacity import retry, wait_random_exponential, stop_after_attempt
 
 # >>> isyatirimhisse import yolunu kendi projenizde nasıl kullanıyorsanız ÖYLE bırakın/değiştirin.
 # Örn: from isyatirimhisse import fetch_stock_data  veya  from isyatirimhisse.some_module import fetch_stock_data
-from isyatirimhisse import fetch_stock_data  # <-- Gerekirse burayı düzelt
+from isyatirimhisse import fetch_stock_data  
 
 logger = logging.getLogger(__name__)
 

@@ -1,14 +1,16 @@
 import os
 import streamlit as st # type: ignore
 import pandas as pd
+
 from modules.data_loader import load_financial_data
-from modules.scanner import run_scan                 # NEW (shared scanner)
+from modules.scanner import run_scan
 from modules.utils_db import (
     scores_table_empty, load_scores_df, save_scores_df
 )
+from modules.financial_cache_manager import get_financials_cached
+from modules.trend_score_manager import get_or_compute_today
 from streamlit import column_config as cc # type: ignore
 from config import RADAR_XLSX
-
 LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "scanner.log")
 
 
@@ -155,9 +157,21 @@ else:
     st.info("Önce “Veritabanından Yükle” veya “Skorları Yenile” seçeneğini tıklayın.")
     st.stop()
 
+with st.spinner("📈 Güncel teknik metrikler getiriliyor..."):
+    tech_df = get_or_compute_today(
+        list(companies),
+        force_refresh=st.session_state.get("force_refresh", False)
+    )
+    # tech_df: columns -> symbol, asof, rsi, sma20, sma50, trend
+    # df_scan’de sembol kolonu:
+    symbol_col = "hisse"  # aşağıda zaten kullanılan isim
+    df_scan = df_scan.merge(
+        tech_df.rename(columns={"symbol": symbol_col}),
+        on=symbol_col, how="left"
+    )
 
 score_df = df_scan     # rename for clarity below
-
+score_df["last_price"] = pd.to_numeric(score_df.get("last_price"), errors="coerce")
 
 
 
@@ -220,6 +234,7 @@ else:
                 label="MOS",
                 format="%.1f%%", 
             ),
+            "last_price": cc.NumberColumn(label="Mevcut Fiyat", format="%.2f"),
         },
         hide_index=True,
         use_container_width=True,
