@@ -17,6 +17,8 @@ PG_URL = "postgresql://postgres:secret@localhost:5432/fin_db"
 
 BENCHMARK_RETURN_PCT = 4.2
 
+TARGET_PERIOD = "2025/6"
+
 PERIODS = [
     "2023/12",
     "2023/09",

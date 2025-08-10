@@ -76,9 +76,10 @@ def fetch_and_process_stock_data(
         df_raw = _fetch()
     except Exception as e:
         logger.exception("Veri çekme hatası")
-        st.error(f"'{symbol}' için veri çekilirken bir AĞ/API HATASI oluştu.")
-        st.warning(f"Detay: {e}")
-        st.info("Sunucu geçici olarak isteği reddetmiş olabilir (rate limiting). Biraz bekleyip tekrar deneyin.")
+        with st.expander("Teknij veri hata ayrıntıları", expanded=False):
+            st.error(f"'{symbol}' için veri çekilirken bir AĞ/API HATASI oluştu.")
+            st.warning(f"Detay: {e}")
+            st.info("Sunucu geçici olarak isteği reddetmiş olabilir (rate limiting). Biraz bekleyip tekrar deneyin.")
         return pd.DataFrame()
 
     if df_raw is None or df_raw.empty:

@@ -261,6 +261,8 @@ def main():
         # YENİ EKLENDİ: Teknik Analiz sekmesinin içeriği
         with tab_tech:
             st.subheader("Teknik Göstergeler")
+            
+            # df_price_tech'in boş olmadığını kontrol et
             if df_price_tech is not None and not df_price_tech.empty:
                 col1, col2 = st.columns(2)
                 with col1:
@@ -279,9 +281,25 @@ def main():
 
                 st.subheader("Fiyat ve Hareketli Ortalamalar Grafiği")
                 
-                # Sadece ilgili sütunları ve son 1 yıllık veriyi alalım
-                chart_df = df_price_tech[['close', 'SMA20', 'SMA50']].tail(252)
-                st.line_chart(chart_df)
+                # --- GRAFİK İÇİN DÜZELTME BURADA ---
+                
+                # 1. Grafik için kullanılacak DataFrame'i kopyala
+                chart_df = df_price_tech.copy()
+                
+                # 2. 'date' sütununu datetime formatına çevir (garanti olsun)
+                chart_df['date'] = pd.to_datetime(chart_df['date'])
+                
+                # 3. İNDEKSİ 'date' SÜTUNU OLARAK AYARLA (En önemli adım)
+                chart_df.set_index('date', inplace=True)
+                
+                # 4. Sadece ilgili sütunları ve son 1 yıllık veriyi seç
+                chart_data_to_plot = chart_df[['close', 'SMA20', 'SMA50']].tail(252)
+                
+                # 5. Artık doğru indekslenmiş veriyi grafiğe gönder
+                st.line_chart(chart_data_to_plot)
+                
+                # --- DÜZELTME SONU ---
+                
                 st.caption("MAVI: Kapanış Fiyatı, TURUNCU: 20 Günlük Basit Ort., YEŞİL: 50 Günlük Basit Ort.")
 
             else:

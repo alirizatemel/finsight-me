@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS trend_scores (
   sma20 REAL,
   sma50 REAL,
   trend TEXT,
+  last_price REAL,
   created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(symbol, date)
 );
 """
@@ -98,7 +100,7 @@ def batch_update(symbols: list[str], force_refresh: bool=False) -> pd.DataFrame:
 def load_for_symbols(symbols: list[str]) -> pd.DataFrame:
     if not symbols: return pd.DataFrame()
     q = text("""
-        SELECT symbol, date, rsi, sma20, sma50, trend
+        SELECT symbol, date, rsi, sma20, sma50, trend, last_price
         FROM trend_scores
         WHERE symbol = ANY(:syms)
     """)
@@ -124,7 +126,7 @@ def _compute_tech_from_prices(df: pd.DataFrame) -> dict | None:
     close = pd.to_numeric(df["close"], errors="coerce")
     if close.isna().all(): 
         return None
-
+    df["close"] = close
     df["SMA20"] = close.rolling(20).mean()
     df["SMA50"] = close.rolling(50).mean()
     df["RSI14"] = ta.rsi(close, length=14)

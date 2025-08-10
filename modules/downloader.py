@@ -11,10 +11,9 @@ from selenium.webdriver.support.ui import WebDriverWait # type: ignore
 from selenium.webdriver.support import expected_conditions as EC # type: ignore
 from modules.logger import logger 
 
+from config import COMPANIES_DIR, SON_BILANCOLAR_JSON, DOWNLOADS_DIR, TARGET_PERIOD
 
-from config import COMPANIES_DIR, SON_BILANCOLAR_JSON, DOWNLOADS_DIR
 
-TARGET_PERIOD = "2025/3"
 PERIOD_RE = re.compile(r"^\d{4}/\d{1,2}$")     # 2025/3, 2024/12 vb.
 
 def is_bilanco_outdated(excel_path: Path, target: str = TARGET_PERIOD) -> bool:

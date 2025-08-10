@@ -182,3 +182,57 @@ def save_trend_score(symbol: str, date: pd.Timestamp, metrics: dict) -> None:
     }
     execute_many(sql, [row])
 
+def load_unified_radar_data() -> pd.DataFrame:
+    """
+    'radar_scores' (temel) ve 'trend_scores' (teknik) tablolarını
+    'hisse'/'symbol' üzerinden birleştirir (LEFT JOIN).
+    
+    'radar_scores' ana tablodur. Her temel skor için en güncel teknik
+    skoru (aynı hisse için) bulup ekler.
+    
+    Dönüş: Tüm skorları içeren tek bir DataFrame.
+    """
+    # SQL sorgusu, iki tabloyu birleştirir.
+    # trend_scores tablosundan sadece en güncel tarihli kaydı almak için
+    # window fonksiyonu (ROW_NUMBER) kullanıyoruz.
+    query = text("""
+    WITH latest_trends AS (
+        SELECT
+            symbol,
+            date,
+            rsi,
+            sma20,
+            sma50,
+            trend,
+            last_price,
+            ROW_NUMBER() OVER(PARTITION BY symbol ORDER BY date DESC) as rn
+        FROM trend_scores
+    )
+    SELECT
+        rs.*, -- radar_scores'dan tüm kolonlar
+        lt.date AS tech_date, -- Teknik analizin tarihini ayrı bir isimle alalım
+        lt.rsi,
+        lt.sma20,
+        lt.sma50,
+        lt.trend,
+        lt.last_price
+    FROM
+        radar_scores rs
+    LEFT JOIN
+        latest_trends lt ON rs.hisse = lt.symbol AND lt.rn = 1;
+    """)
+    
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+            # 'date' ve 'timestamp' kolonları çakışabilir veya kafa karıştırabilir.
+            # Ana tarih olarak radar_scores'daki timestamp'i kullanalım.
+            # Teknik analizin tarihini tech_date olarak aldık, gerekirse kullanılabilir.
+            if 'date' in df.columns and 'tech_date' in df.columns:
+                 df.rename(columns={'tech_date': 'date'}, inplace=True)
+                 
+            return df
+    except Exception as e:
+        # Hata durumunda veya tablolar boşsa, logla ve boş DataFrame dön.
+        logger.error(f"Birleşik radar verisi yüklenirken hata oluştu: {e}")
+        return pd.DataFrame()
