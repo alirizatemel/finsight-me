@@ -1,26 +1,13 @@
-"""
-SQL (run once):  VIEW v_portfolio_dashboard
--------------------------------------------------
-CREATE OR REPLACE VIEW v_portfolio_dashboard AS
-WITH latest_scores AS (
-    SELECT DISTINCT ON (hisse)
-        hisse,
-        graham AS graham_skor,
-        "MOS"    AS mos,
-        "timestamp"
-    FROM   radar_scores
-    ORDER  BY hisse, "timestamp" DESC
-)
-SELECT p.*, ls.graham_skor, ls.mos
-FROM   portfolio p
-LEFT   JOIN latest_scores ls ON ls.hisse = p.hisse;
-"""
-
 import streamlit as st #type: ignore
 import pandas as pd
 from datetime import date
-from modules.utils_db import load_portfolio_df, upsert_portfolio, engine
-from sqlalchemy import text #type: ignore
+# Veritabanı fonksiyonlarını modülden import ediyoruz
+from modules.db.portfolio import (
+    upsert_portfolio, 
+    load_full_portfolio_df, 
+    delete_portfolio_by_id
+)
+
 
 st.set_page_config(page_title="Portföy Yönetimi", page_icon="📋", layout="wide")
 
@@ -47,9 +34,15 @@ def _fill_form(form, rec: dict):
     lot = form.number_input("Lot", min_value=1, value=int(rec["lot"]))
     maliyet = form.number_input("Maliyet", format="%.4f", value=float(rec["maliyet"]))
     alis_tarihi = form.date_input("Alış Tarihi", value=rec["alis_tarihi"])
+    
+    # satis_tarihi pd.NaT ise None'a çevir
+    satis_tarihi_value = rec["satis_tarihi"]
+    if pd.isna(satis_tarihi_value):
+        satis_tarihi_value = None
+
     satis_tarihi = form.date_input(
         "Satış Tarihi",
-        value=rec["satis_tarihi"] if rec["satis_tarihi"] else None,
+        value=satis_tarihi_value,
         disabled=False
     ) 
     satis_fiyat_raw = form.text_input(
@@ -62,7 +55,7 @@ def _fill_form(form, rec: dict):
     except ValueError:
         st.warning("Satış fiyatı geçerli bir sayı olmalıdır.")
         satis_fiyat = None
-    notu = form.text_area("Not", value=rec["notu"])
+    notu = form.text_area("Not", value=rec.get("notu", "")) # get() ile notu yoksa hatayı önle
 
     return {
         "hisse": hisse,
@@ -80,24 +73,19 @@ def _fill_form(form, rec: dict):
 st.title("📋 Portföy Yönetimi")
 
 # ---------------------------------------------------------------------------
-# Mevcut kayıtları yükle
+# Mevcut kayıtları yükle (MODÜL FONKSİYONU İLE)
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Mevcut kayıtları yükle (id dâhil)
-# ---------------------------------------------------------------------------
-try:
-    df_all = pd.read_sql("SELECT * FROM portfolio ORDER BY alis_tarihi DESC", engine)
+df_all = load_full_portfolio_df()
+
+# Hesaplamalar DataFrame yüklendikten sonra yapılır
+if not df_all.empty:
     df_all["toplam_maliyet"] = df_all["maliyet"] * df_all["lot"]
     df_all = df_all.sort_values(by="toplam_maliyet", ascending=False)
-except Exception:
-    df_all = pd.DataFrame()
 
 # ---------------------------------------------------------------------------
-# Kayıt seç / düzenle bölümü
+# Kayıt seç / düzenle bölümü (DEĞİŞİKLİK YOK)
 # ---------------------------------------------------------------------------
 with st.expander("➕ Yeni Kayıt / ✏️ Güncelle"):
-
-    # Selectbox'ta hisse adları gösterilsin; tekrar eden hisseler için ilk kayıt seçilir
     if df_all.empty:
         options = ["Yeni Kayıt"]
     else:
@@ -112,7 +100,6 @@ with st.expander("➕ Yeni Kayıt / ✏️ Güncelle"):
     if selected == "Yeni Kayıt":
         record_defaults = _df_defaults()
     else:
-        # Seçilen hisseye ait ilk satırı getir (birden fazla pozisyon varsa en eskiyi alır)
         record_defaults = (
             df_all[df_all["hisse"] == selected]
             .sort_values("alis_tarihi")
@@ -126,9 +113,8 @@ with st.expander("➕ Yeni Kayıt / ✏️ Güncelle"):
 
         if submitted:
             rec_df = pd.DataFrame([new_values])
-            upsert_portfolio(rec_df)  # util fonksiyonu id'siz upsert eder
-            st.success("Kayıt eklendi/güncellendi. Sayfayı yenileyin veya tabloyu kontrol edin.")
-
+            upsert_portfolio(rec_df)  # Bu çağrı zaten modülerdi
+            st.success("Kayıt eklendi/güncellendi. Sayfa yeniden yükleniyor...")
             st.rerun()
 
 # ---------------------------------------------------------------------------
@@ -136,15 +122,27 @@ with st.expander("➕ Yeni Kayıt / ✏️ Güncelle"):
 # ---------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📑 Mevcut Portföy Pozisyonları")
-st.dataframe(df_all, use_container_width=True)
+# id sütununu gizleyerek gösterim
+if not df_all.empty:
+    st.dataframe(df_all, use_container_width=True, hide_index=True)
+else:
+    st.info("Henüz portföy kaydı bulunmuyor.")
 
 # ---------------------------------------------------------------------------
 # Silme bölümü
 # ---------------------------------------------------------------------------
 st.markdown("### ❌ Kayıt Sil")
-row_id = st.number_input("Silmek istediğiniz kaydın ID'si", min_value=1, step=1)
-if st.button("Sil"):
-    delete_sql = text("DELETE FROM portfolio WHERE id = :id")
-    with engine.begin() as conn:
-        conn.execute(delete_sql, {"id": row_id})
-    st.warning(f"ID {row_id} silindi. Tabloyu yenileyin.")
+if not df_all.empty:
+    row_id = st.number_input("Silmek istediğiniz kaydın ID'si", min_value=1, step=1)
+    if st.button("Sil"):
+        # Doğrudan SQL yerine modül fonksiyonunu çağırıyoruz
+        rows_deleted = delete_portfolio_by_id(row_id)
+        if rows_deleted > 0:
+            st.success(f"ID {row_id} silindi. Sayfa yeniden yükleniyor...")
+        else:
+            st.error(f"ID {row_id} bulunamadı veya silinemedi.")
+        st.rerun()
+else:
+    st.warning("Silinecek kayıt bulunmuyor.")
+
+# --- END OF FILE 06_portfolio_editor.py ---

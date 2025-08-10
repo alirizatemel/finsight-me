@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Optional
 
 # YENİ: Sadece birleşik veri yükleme fonksiyonunu import ediyoruz
-from modules.utils_db import load_unified_radar_data 
+from modules.db.radar_scores import load_unified_radar_data 
 from streamlit import column_config as cc
 
 st.set_page_config(layout="wide")

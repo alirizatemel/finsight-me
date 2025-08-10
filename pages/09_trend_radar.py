@@ -7,7 +7,7 @@ from datetime import datetime
 from streamlit import column_config as cc # type: ignore
 from isyatirimhisse import StockData
 
-from modules.utils_db import load_filtered_radar_scores
+from modules.db.radar_scores import load_filtered_radar_scores
 
 # -------------------------------------------
 # Teknik analiz verisini önbellekten getir veya çek

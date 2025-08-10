@@ -19,7 +19,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))               # add once, reusable everywhere
 # -----------------------------------------------------------------------------
 
-from modules.utils_db import upsert_performance_log
+from modules.db.performance_log import upsert_performance_log
 
 def load_excel(path: Path) -> pd.DataFrame:
     """Read the Excel file and bring column names / types in line with the DB."""

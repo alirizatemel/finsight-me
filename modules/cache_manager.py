@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import pytz
 
-from modules.data_fetcher import fetch_and_process_stock_data
+from modules.technical_analysis.data_fetcher import fetch_and_process_stock_data
 
 CACHE_DIR = Path("data_cache")
 IST = pytz.timezone("Europe/Istanbul")

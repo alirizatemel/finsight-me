@@ -1,5 +1,3 @@
-# --- START OF FILE 08_position_pulse.py (CSV ÇIKTISINA GÖRE GÜNCELLENDİ) ---
-
 import traceback 
 import streamlit as st
 import pandas as pd
@@ -12,7 +10,7 @@ from isyatirimhisse import fetch_stock_data
 import pandas_ta as ta
 
 # Yerel modül
-from modules.utils_db import load_portfolio_df
+from modules.db.portfolio import load_portfolio_df
 
 # ---------------------------------------------------------------------------
 # Veri Çekme ve İşleme Fonksiyonları

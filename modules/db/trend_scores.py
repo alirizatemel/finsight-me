@@ -1,18 +1,18 @@
-# modules/trend_score_manager.py
 from __future__ import annotations
 from datetime import datetime, timedelta
 import pytz
 import pandas as pd
 import pandas_ta as ta # type: ignore
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text # type: ignore
 from config import PG_URL  # type: ignore
 from modules.cache_manager import get_price_df
 from modules.technical_analysis.trend_indicators import calculate_rsi_trend
 
-from modules.cache_manager import get_price_df  # -> data_cache/{symbol}.parquet
-from modules.utils_db import execute_many, read_df 
+from modules.db.core import execute_many, read_df 
 
 engine = create_engine(PG_URL)
+
+IST = pytz.timezone("Europe/Istanbul")
 
 DDL = """
 CREATE TABLE IF NOT EXISTS trend_scores (
@@ -108,8 +108,6 @@ def load_for_symbols(symbols: list[str]) -> pd.DataFrame:
         df = pd.read_sql(q, conn, params={"syms": symbols})
     return df
 
-IST = pytz.timezone("Europe/Istanbul")
-
 def _bist_business_date(now=None):
     now = now or datetime.now(IST); d = now.date()
     if d.weekday() == 5: return d - timedelta(days=1)  # Cumartesi->Cuma
@@ -158,7 +156,6 @@ def _get_today_from_db(symbols: list[str]) -> pd.DataFrame:
     """
     return read_df(q, {"date": date_, "symbols": list(symbols)})
 
-
 def _upsert_trend_rows(rows: list[dict]) -> None:
     sql = """
     INSERT INTO trend_scores(symbol, "date", rsi, sma20, sma50, trend, last_price, created_at, updated_at)
@@ -173,7 +170,6 @@ def _upsert_trend_rows(rows: list[dict]) -> None:
       updated_at = NOW();
     """
     execute_many(sql, rows)
-
 
 def get_or_compute_today(symbols: list[str], *, force_refresh: bool=False) -> pd.DataFrame:
     symbols = [s.strip().upper() for s in symbols if isinstance(s, str) and s.strip()]

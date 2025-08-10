@@ -1,6 +1,6 @@
 import traceback
 from modules.utils import scalar, period_order, safe_divide
-from modules.ratios import calculate_roa_ttm
+from modules.scoring.ratios import calculate_roa_ttm
 from modules.financial_snapshot import build_snapshot
 from modules.logger import logger
 import traceback

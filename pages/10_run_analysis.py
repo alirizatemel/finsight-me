@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from config import RADAR_XLSX
 from modules.scanner import run_scan
-from modules.trend_score_manager import get_or_compute_today
-from modules.utils_db import save_scores_df
+from modules.db.trend_scores import get_or_compute_today
+from modules.db.core import save_dataframe
 
 st.set_page_config(layout="wide")
 st.title("⚙️ Analiz ve Veri Güncelleme")
@@ -76,7 +76,7 @@ if st.button("🚀 Tüm Analizleri Başlat ve Veritabanını Güncelle", type="p
     with st.spinner("💾 Birleştirilmiş veriler `radar_scores` tablosuna kaydediliyor..."):
         try:
             # Temel ve teknik skorları bir arada olan df_merged'i kaydediyoruz.
-            save_scores_df(df_merged, table="radar_scores")
+            save_dataframe(df_merged, table="radar_scores")
             st.success("🎉 Tüm veriler başarıyla veritabanına kaydedildi!")
             st.balloons()
         except Exception as e:

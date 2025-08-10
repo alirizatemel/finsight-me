@@ -1,6 +1,6 @@
 #  pages/04_balance_download.py
 import streamlit as st #type: ignore
-from modules.downloader import update_companies_if_needed
+from modules.finance.downloader import update_companies_if_needed
 
 st.title("📥 Fintables Bilanço İndirici")
 

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from modules.data_loader import load_financial_data
+from modules.finance.data_loader import load_financial_data
 from modules.scores import (
     calculate_scores,
     show_company_scorecard,
@@ -12,7 +12,7 @@ from modules.scores import (
     fcf_yield_time_series,
     monte_carlo_dcf_simple
 )
-from modules.data_fetcher import fetch_and_process_stock_data
+from modules.technical_analysis.data_fetcher import fetch_and_process_stock_data
 from modules.cache_manager import get_price_df
 from config import RADAR_XLSX
 import pandas_ta as ta

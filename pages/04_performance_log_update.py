@@ -4,10 +4,12 @@ import streamlit as st   # type: ignore
 import pandas as pd
 from datetime import datetime
 from config import RADAR_XLSX
-from modules.utils_db import (
-    load_portfolio_df,
+from modules.db.performance_log import (
     load_performance_log,
     upsert_performance_log,
+)
+from modules.db.portfolio import (
+    load_portfolio_df
 )
 
 st.set_page_config(page_title="📈 Performans Log Güncelle", layout="wide")

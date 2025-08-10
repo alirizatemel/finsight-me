@@ -110,7 +110,6 @@ def load_active_portfolio_df() -> pd.DataFrame:
         print(f"exception:{e}")
         return pd.DataFrame(columns=cols)
 
-
 def upsert_portfolio(df: pd.DataFrame,
                      conflict_cols: Optional[list[str]] = None) -> None:
     """
@@ -140,6 +139,9 @@ def upsert_portfolio(df: pd.DataFrame,
     with engine.begin() as conn:
         conn.execute(text(insert_sql), df.to_dict("records"))
 
+
+# --- radar_scores tablosu için yardımcı fonksiyonlar --------------------------
+
 def load_filtered_radar_scores(
     f_min=5, graham_min=2, lynch_min=1, m_max=-1.78, mos_min=20.0
 ) -> pd.DataFrame:
@@ -152,7 +154,6 @@ def load_filtered_radar_scores(
        AND lynch >= {lynch_min}
     """
     return pd.read_sql(query, engine)
-
 
 def save_trend_score(symbol: str, date: pd.Timestamp, metrics: dict) -> None:
     """

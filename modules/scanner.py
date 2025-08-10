@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
-from modules.data_loader import load_financial_data
+from modules.finance.data_loader import load_financial_data
 from modules.scoring import (
     beneish, graham, lynch, piotroski
 )
