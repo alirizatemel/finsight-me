@@ -13,12 +13,12 @@ from modules.scores import (
 from modules.finance.dcf import monte_carlo_dcf_simple
 from modules.utils import period_order
 
-from modules.cache_manager import get_price_df
+from modules.technical_analysis.cache_manager import get_price_df
 from config import RADAR_XLSX
 import pandas_ta as ta
 
 @st.cache_data(show_spinner=False) # Üst fonksiyon zaten spinner gösteriyor
-def apply_technical_filters(_df_price: pd.DataFrame) -> dict:
+def apply_technical_filters(symbol: str, _df_price: pd.DataFrame) -> dict:
     """
     Fiyat verisi üzerinden teknik göstergeleri hesaplar.
     `10_tech_radar.py` dosyasından alınıp grafik için SMA'ları da döndürecek şekilde güncellendi.
@@ -163,7 +163,7 @@ def main():
         # YENİ: Teknik analiz verilerini çek
         with st.spinner("Teknik göstergeler hesaplanıyor..."):
             df_price_raw = get_price_df(symbol)
-            tech_indicators = apply_technical_filters(df_price_raw)
+            tech_indicators = apply_technical_filters(symbol, df_price_raw)
             df_price_tech = tech_indicators.get("price_df")
 
 

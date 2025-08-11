@@ -5,7 +5,7 @@ import pandas as pd
 import pandas_ta as ta # type: ignore
 from sqlalchemy import create_engine, text # type: ignore
 from config import PG_URL  # type: ignore
-from modules.cache_manager import get_price_df
+from modules.technical_analysis.cache_manager import get_price_df
 from modules.technical_analysis.trend_indicators import calculate_rsi_trend
 
 from modules.db.core import execute_many, read_df 

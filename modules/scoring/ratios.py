@@ -1,6 +1,6 @@
 import pandas as pd
 from modules.utils import scalar
-from modules.financial_snapshot import build_snapshot
+from modules.finance.financial_snapshot import build_snapshot
 from modules.logger import logger 
 
 def calculate_roa_ttm(income: pd.DataFrame, balance: pd.DataFrame, period_order_fn) -> float:

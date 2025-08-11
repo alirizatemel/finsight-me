@@ -1,5 +1,5 @@
 from modules.utils import safe_divide
-from modules.financial_snapshot import build_snapshot
+from modules.finance.financial_snapshot import build_snapshot
 from modules.logger import logger
 
 def calculate_beneish_m_score(company, balance, income, cashflow, curr, prev):

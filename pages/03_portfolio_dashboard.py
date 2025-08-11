@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st #type: ignore
 
-from modules.db.performance_log import load_performance_log, load_active_portfolio_df
+from modules.db.performance_log import load_performance_log
 from modules.db.portfolio import load_active_portfolio_df
 
 # ---------------------------------------------------------------------------
