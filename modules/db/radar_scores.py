@@ -1,4 +1,3 @@
-from sqlalchemy import text  #type: ignore
 import pandas as pd
 from modules.logger import logger 
 from modules.db.core import read_df, execute_many
@@ -57,7 +56,7 @@ def load_unified_radar_data() -> pd.DataFrame:
     # SQL sorgusu, iki tabloyu birleştirir.
     # trend_scores tablosundan sadece en güncel tarihli kaydı almak için
     # window fonksiyonu (ROW_NUMBER) kullanıyoruz.
-    query = text("""
+    query = """
     WITH latest_trends AS (
         SELECT
             symbol,
@@ -82,13 +81,18 @@ def load_unified_radar_data() -> pd.DataFrame:
         radar_scores rs
     LEFT JOIN
         latest_trends lt ON rs.hisse = lt.symbol AND lt.rn = 1;
-    """)
+    """
     
     try:
         df = read_df(query)
         # 'date' ve 'timestamp' kolonları çakışabilir veya kafa karıştırabilir.
         # Ana tarih olarak radar_scores'daki timestamp'i kullanalım.
         # Teknik analizin tarihini tech_date olarak aldık, gerekirse kullanılabilir.
+        text_cols = ["hisse", "trend", "symbol"]
+        for col in text_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str)
+
         if 'date' in df.columns and 'tech_date' in df.columns:
                 df.rename(columns={'tech_date': 'date'}, inplace=True)
                  

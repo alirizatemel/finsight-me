@@ -11,10 +11,10 @@ from modules.scoring import (
     beneish, graham, lynch, piotroski
 )
 from modules.scores import (
-    monte_carlo_dcf_simple,
-    period_order,
     fcf_detailed_analysis
 )
+from modules.finance.dcf import monte_carlo_dcf_simple
+from modules.utils import period_order
 from modules.logger import logger 
 
 # ────────────────────────────────────────────────

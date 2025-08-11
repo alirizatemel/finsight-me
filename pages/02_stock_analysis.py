@@ -6,13 +6,13 @@ from modules.finance.data_loader import load_financial_data
 from modules.scores import (
     calculate_scores,
     show_company_scorecard,
-    period_order,
     fcf_detailed_analysis,
     fcf_detailed_analysis_plot,
-    fcf_yield_time_series,
-    monte_carlo_dcf_simple
+    fcf_yield_time_series
 )
-from modules.technical_analysis.data_fetcher import fetch_and_process_stock_data
+from modules.finance.dcf import monte_carlo_dcf_simple
+from modules.utils import period_order
+
 from modules.cache_manager import get_price_df
 from config import RADAR_XLSX
 import pandas_ta as ta
