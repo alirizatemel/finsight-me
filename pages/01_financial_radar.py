@@ -120,5 +120,5 @@ st.markdown(f"**Gösterilen Şirket Sayısı:** `{len(filtered_df)}` / `{len(sco
 render_table(filtered_df)
 
 st.sidebar.info(
-    "Verileri güncellemek için soldaki menüden **'Analiz ve Veri Güncelleme'** sayfasına gidin."
+    "Verileri güncellemek için soldaki menüden **'Aksiyon Merkezi'** sayfasında bulunan Calculate & Save Radar Scores sekmesine gidin."
 )

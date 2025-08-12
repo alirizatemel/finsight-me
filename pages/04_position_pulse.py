@@ -1,13 +1,13 @@
 import traceback 
-import streamlit as st
+import streamlit as st #type: ignore
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict
 import os
 
 # Kütüphane importları
-from isyatirimhisse import fetch_stock_data
-import pandas_ta as ta
+from isyatirimhisse import fetch_stock_data #type: ignore
+import pandas_ta as ta #type: ignore
 
 # Yerel modül
 from modules.db.portfolio import load_portfolio_df
