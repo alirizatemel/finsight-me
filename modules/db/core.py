@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping, Optional, Any
 import os
+import sys
 import pandas as pd
 from sqlalchemy import create_engine, text  # SQLAlchemy 2.x
 from sqlalchemy.engine import Engine, Result
@@ -67,14 +68,25 @@ def execute_many(sql: str, rows: Iterable[Mapping[str, Any]]) -> int:
 
 def execute_one(sql: str, params: Optional[Mapping[str, Any]] = None) -> int:
     """
-    Tek sorgu (INSERT/UPDATE/DDL) çalıştır.
+    Tek sorgu (INSERT/UPDATE/DDL) çalıştır. (ULTRA DETAYLI HATA AYIKLAMA MODU)
     """
+
+    stmt = text(sql)
+    parameters = params or {}
+
     try:
         with engine.begin() as conn:
-            res: Result = conn.execute(text(sql), params or {})
-            return getattr(res, "rowcount", -1) or -1
+            res: Result = conn.execute(stmt, parameters)
+            rowcount = res.rowcount if res.rowcount is not None else -1
+            
+            sys.stderr.flush()
+            return rowcount
     except SQLAlchemyError as e:
-        logger.exception("execute_one failed")
+        # Hatanın orijinal traceback'ini (izini) de yazdıralım
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        # Hatayı yine de yukarıya fırlatıyoruz ki Streamlit bunu görsün.
         raise
 
 
