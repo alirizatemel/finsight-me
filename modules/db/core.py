@@ -5,9 +5,10 @@ from typing import Iterable, Mapping, Optional, Any
 import os
 import sys
 import pandas as pd
-from sqlalchemy import create_engine, text  # SQLAlchemy 2.x
+from sqlalchemy import create_engine, text, Table, MetaData  # SQLAlchemy 2.x
 from sqlalchemy.engine import Engine, Result
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from modules.logger import logger  # projendeki logger
 
 # --- Bağlantı ayarı ---------------------------------------------------------
@@ -100,15 +101,56 @@ def fetch_value(sql: str, params: Optional[Mapping[str, Any]] = None) -> Any:
         return None if row is None else row[0]
 
 
-def save_dataframe(df: pd.DataFrame, *, table: str, truncate: bool = False) -> None:
+def save_dataframe(df: pd.DataFrame, table: str, index_elements: list = None):
     """
-    DataFrame'i tabloya yazar. truncate=True ise önce tabloyu boşaltır.
-    Not: to_sql için connection context'i engine.begin ile veriyoruz.
+    Saves a DataFrame to a database table.
+    
+    If `index_elements` are provided, it performs an "upsert" operation
+    (updates on conflict, inserts if new) based on those unique key columns.
+    Otherwise, it performs a simple append.
+
+    Args:
+        df (pd.DataFrame): The dataframe to save.
+        table (str): The name of the target database table.
+        index_elements (list, optional): A list of column names that form the
+                                          unique constraint. For upserting.
+                                          Defaults to None (simple append).
     """
-    with engine.begin() as conn:
-        if truncate:
-            conn.execute(text(f'TRUNCATE TABLE "{table}";'))
-        df.to_sql(table, con=conn, if_exists="append", index=False)
+    
+    if not index_elements:
+        # Eski davranış: Basitçe ekle (append)
+        df.to_sql(table, con=engine, if_exists="append", index=False)
+        return
+
+    # Yeni davranış: Upsert (Update or Insert)
+    with engine.connect() as conn:
+        with conn.begin(): # Transaksiyon başlat
+            # DataFrame'i dictionary listesine çevir
+            data_to_insert = df.to_dict(orient='records')
+            
+            # SQLAlchemy kullanarak tablo nesnesini al
+            
+            metadata = MetaData()
+            target_table = Table(table, metadata, autoload_with=engine)
+            
+            # PostgreSQL'e özel INSERT ... ON CONFLICT ifadesini oluştur
+            stmt = pg_insert(target_table).values(data_to_insert)
+            
+            # Güncellenecek sütunları belirle
+            # Unique key olanlar hariç diğer tüm sütunları güncelle
+            update_cols = {
+                c.name: c for c in stmt.excluded if c.name not in index_elements
+            }
+            
+            # ON CONFLICT ifadesini tamamla
+            # Eğer index_elements'a göre bir çakışma olursa, update_cols'u güncelle
+            upsert_stmt = stmt.on_conflict_do_update(
+                index_elements=index_elements,
+                set_=update_cols,
+            )
+            
+            # Komutu çalıştır
+            conn.execute(upsert_stmt)   
 
 
 def scores_table_empty(table: str) -> bool:

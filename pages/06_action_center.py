@@ -3,7 +3,7 @@ import pandas as pd
 from config import RADAR_XLSX
 
 # Action modules (our library)
-from modules.page_actions.radar_analysis import run_radar_analysis_workflow
+from modules.page_actions.radar_analysis import run_radar_analysis_workflow,render_analysis_controls
 from modules.page_actions.performance_log import run_performance_log_update
 from modules.page_actions.balance_download import run_balance_download_workflow
 
@@ -35,8 +35,7 @@ with tab1:
         companies = df_radar["Şirket"].dropna().unique().tolist()
         st.markdown(f"**Number of companies to be analyzed:** `{len(companies)}`")
 
-        if st.button("🚀 Start Full Analysis", key="run_analysis", type="primary"):
-            run_radar_analysis_workflow(companies)
+        render_analysis_controls(df_radar, companies)
 
     except FileNotFoundError:
         st.error(f"Radar file not found: `{RADAR_XLSX}`. Please check the file.")

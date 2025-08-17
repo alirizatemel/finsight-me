@@ -75,6 +75,7 @@ def run_scan(
 
             record = {
                 "hisse": c,
+                "period": curr,
                 "f_skor": f_score,
                 "m_skor": m_score,
                 "graham": g_score,
