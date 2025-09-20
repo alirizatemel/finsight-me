@@ -2,22 +2,51 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-from config import COMPANIES_DIR
+from config import COMPANIES_DIR, RADAR_XLSX
 from modules.finance.profitability import build_profitability_ratios
 
 
 @st.cache_data(show_spinner=False)
 def list_symbols() -> list[str]:
+    """Return symbols from RADAR_XLSX 'Şirket' column.
+
+    Falls back to scanning company files if RADAR file is unavailable.
+    """
+    # Primary: read from radar file
+    try:
+        df = pd.read_excel(RADAR_XLSX)
+        col = None
+        # Try common variants to be robust against encoding/label differences
+        for c in df.columns:
+            cn = str(c).strip().lower()
+            if cn in {"şirket", "sirket", "company", "hisse", "symbol"}:
+                col = c
+                break
+        if col is not None:
+            syms = (
+                df[col]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .dropna()
+                .unique()
+                .tolist()
+            )
+            return sorted(syms)
+    except Exception:
+        pass
+
+    # Fallback: scan companies directory
     base = Path(COMPANIES_DIR)
     if not base.exists():
         return []
-    syms = []
+    syms: list[str] = []
     for p in base.iterdir():
         if p.is_dir():
             x = p / f"{p.name} (TRY).xlsx"
             if x.exists():
                 syms.append(p.name)
-    return sorted(syms)
+    return sorted(set(syms))
 
 
 def evaluate_company(symbol: str,
@@ -99,7 +128,7 @@ def main():
 
     symbols = list_symbols()
     if not symbols:
-        st.warning("Şirket verisi bulunamadı. 'data/companies' altını kontrol edin.")
+        st.warning("Radar dosyasından şirket listesi alınamadı. Gerekirse 'data/companies' altını kontrol edin.")
         st.stop()
 
     with st.sidebar:
@@ -120,8 +149,29 @@ def main():
         "ebitda_margin": em_th,
     }
 
+    with st.expander("Tablo Kolonlari Aciklamalari"):
+        st.markdown(
+            "- Sirket: degerlendirilen hisse kodu.\n"
+            "- Durum: GECTI ise tum kurallar saglandi, aksi halde GECEMEDI.\n"
+            "- ROE yil: son 7 yilda ROE esigi asilan yil sayisi.\n"
+            "- ROA yil: son 7 yilda ROA esigi asilan yil sayisi.\n"
+            "- NetMarj yil: son 7 yilda Net Kar Marji esigi asilan yil sayisi.\n"
+            "- BrutMarj yil: son 7 yilda Brut Marj esigi asilan yil sayisi.\n"
+            "- FAVOKMarj yil: son 7 yilda FAVOK Marji esigi asilan yil sayisi.\n"
+            "- Istisna yil: ayni yil icinde tum metriklerin birlikte esigi gecemedigi yil sayisi.\n"
+            "- Not: gecememe gerekcesi veya hata mesaji."
+        )
+
     st.write(f"Toplam şirket: {len(symbols)}")
 
+    if "scan_profit" not in st.session_state:
+        st.session_state.scan_profit = False
+    start_btn = st.sidebar.button("Taramayi Baslat")
+    if start_btn:
+        st.session_state.scan_profit = True
+    if not st.session_state.scan_profit:
+        st.info("Once filtreleri ayarlayin ve 'Taramayi Baslat' butonuna basin.")
+        st.stop()
     results = []
     passed = []
     with st.spinner("Şirketler değerlendiriliyor..."):
@@ -159,4 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
