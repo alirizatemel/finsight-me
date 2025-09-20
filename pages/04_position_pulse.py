@@ -1,4 +1,4 @@
-import traceback 
+import traceback
 import streamlit as st #type: ignore
 import pandas as pd
 from datetime import datetime, timedelta
@@ -9,8 +9,9 @@ import os
 from isyatirimhisse import fetch_stock_data #type: ignore
 import pandas_ta as ta #type: ignore
 
-# Yerel modül
-from modules.db.portfolio import load_portfolio_df
+# Yerel modüller
+from modules.db.transactions import get_current_portfolio_df, get_closed_positions_summary # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Veri Çekme ve İşleme Fonksiyonları
@@ -45,17 +46,15 @@ def get_cached_or_fetch(symbol: str, days: int = 120, max_age_days: int = 1) -> 
         st.warning(f"⚠️ **{symbol}** için veri çekilirken beklenmedik bir hata oluştu: {e}. Bu hisse atlanıyor.")
         return pd.DataFrame()
 
-    # DÜZELTME 1: Sütun kontrolü, gerçek sütun adına ('HGDG_TARIH') göre yapıldı.
     if df_all is None or df_all.empty or "HGDG_TARIH" not in df_all.columns:
         st.info(f"ℹ️ **{symbol}** için geçerli veri bulunamadı.")
         return pd.DataFrame()
 
-    # DÜZELTME 2: 'rename' işlemi, CSV'den gelen gerçek sütun adlarına göre güncellendi.
     df_all.rename(columns={
         "HGDG_KAPANIS": "close",
         "HGDG_MAX": "high",
         "HGDG_MIN": "low",
-        "HGDG_HACIM": "volume", # HGDG_HACIM veya HG_HACIM kullanılabilir, ikisi de aynı görünüyor.
+        "HGDG_HACIM": "volume",
         "HGDG_TARIH": "date",
         "HGDG_HS_KODU": "symbol"
     }, inplace=True)
@@ -63,10 +62,9 @@ def get_cached_or_fetch(symbol: str, days: int = 120, max_age_days: int = 1) -> 
     df_all["date"] = pd.to_datetime(df_all["date"])
     df_all.set_index("date", inplace=True)
     df_all.sort_index(inplace=True)
-    
-    # Sadece gerekli sütunları tutarak dosyayı küçültebiliriz (isteğe bağlı)
+
     final_df = df_all[['close', 'high', 'low', 'volume', 'symbol']]
-    
+
     final_df.to_parquet(cache_path)
     return final_df
 
@@ -80,9 +78,9 @@ def get_all_prices(symbols: List[str], days: int = 120) -> Dict[str, pd.DataFram
         df = get_cached_or_fetch(symbol, days=days)
         if not df.empty:
             price_dict[symbol] = df
-        
+
         progress_bar.progress((i + 1) / total_symbols, text=f"Hisse verileri çekiliyor... ({symbol})")
-    
+
     progress_bar.empty()
     return price_dict
 
@@ -94,16 +92,35 @@ def compute_rsi(close: pd.Series, length: int = 14) -> float:
     return rsi_series.dropna().iloc[-1] if not rsi_series.dropna().empty else float("nan")
 
 # ---------------------------------------------------------------------------
-# Analiz Fonksiyonları (Bu bölümlerde değişiklik yok)
+# Analiz Fonksiyonları (transactions tablosuna göre güncellendi)
 # ---------------------------------------------------------------------------
 
-def buy_back_analysis(sold_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+def buy_back_analysis(closed_positions_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     rows = []
-    for _, row in sold_df.iterrows():
+    for _, row in closed_positions_df.iterrows():
         sym = row["hisse"]
-        sale_price = row["satis_fiyat"]
+        # toplam_lot_satis'in 0 olup olmadığını kontrol et
+        if row["toplam_lot_satis"] > 0:
+            avg_sale_price = row["toplam_satis_tutari"] / row["toplam_lot_satis"]
+        else:
+            # Eğer satış yapılmamışsa (ki bu durumda closed_positions_df'te olmamalı ama bir ihtimal)
+            # veya veri tutarsızlığı varsa, ortalama satış fiyatını NaN yap
+            avg_sale_price = float("nan")
+
         today_close, rsi_value, trend = float("nan"), float("nan"), "BILINMIYOR"
         suggestion = "BEKLE"
+
+        if pd.isna(avg_sale_price): # Ortalama satış fiyatı yoksa analizi yapma
+            rows.append({
+                "Hisse": sym,
+                "Ort. Satış Fiyatı": float("nan"),
+                "Güncel Fiyat": today_close,
+                "RSI": rsi_value,
+                "Trend": trend,
+                "Hedef (−7%)": float("nan"),
+                "Karar": "VERİ YETERSİZ"
+            })
+            continue # Bu hisse için sonraki satıra geç
 
         if sym in all_prices:
             price_df = all_prices[sym]
@@ -125,29 +142,29 @@ def buy_back_analysis(sold_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]
                 else:
                     trend = "YETERSIZ VERI"
 
-                target_7 = round(sale_price * 0.93, 2)
+                target_7 = round(avg_sale_price * 0.93, 2)
                 if today_close <= target_7 and (
                     (pd.notna(rsi_value) and rsi_value <= 40) or trend == "TREND DÖNÜŞÜ"):
                     suggestion = "GERI AL"
 
         rows.append({
             "Hisse": sym,
-            "Satış Fiyatı": sale_price,
+            "Ort. Satış Fiyatı": round(avg_sale_price, 2),
             "Güncel Fiyat": today_close,
             "RSI": rsi_value,
             "Trend": trend,
-            "Hedef (−7%)": round(sale_price * 0.93, 2),
+            "Hedef (−7%)": round(avg_sale_price * 0.93, 2),
             "Karar": suggestion
         })
 
     df = pd.DataFrame(rows)
-    return df.style.applymap(lambda v: 'color: green; font-weight: bold' if v == 'GERI AL' else ('color: gray' if v == 'BEKLE' else None), subset=['Karar'])
+    return df.style.applymap(lambda v: 'color: green; font-weight: bold' if v == 'GERI AL' else ('color: gray' if v == 'BEKLE' or v == 'VERİ YETERSİZ' else None), subset=['Karar'])
 
 
-def sell_analysis(active_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+def sell_analysis(active_portfolio_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     rows = []
-    for _, row in active_df.iterrows():
-        sym, cost = row["hisse"], row["maliyet"]
+    for _, row in active_portfolio_df.iterrows():
+        sym, cost = row["hisse"], row["ortalama_maliyet"]
         latest_close, pnl_pct, rsi_value = float("nan"), float("nan"), float("nan")
         trend, suggestion = "BILINMIYOR", "DEGERLENDIR"
 
@@ -171,7 +188,7 @@ def sell_analysis(active_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) 
         else:
             trend = "VERI YOK"
 
-        rows.append({"Hisse": sym, "Lot": row["lot"], "Maliyet": cost, "Güncel": latest_close, "PnL %": pnl_pct, "RSI": rsi_value, "Trend": trend, "Karar": suggestion})
+        rows.append({"Hisse": sym, "Lot": row["lot"], "Maliyet": round(cost,2), "Güncel": latest_close, "PnL %": pnl_pct, "RSI": rsi_value, "Trend": trend, "Karar": suggestion})
 
     df = pd.DataFrame(rows)
     return df.style.applymap(
@@ -181,43 +198,45 @@ def sell_analysis(active_df: pd.DataFrame, all_prices: Dict[str, pd.DataFrame]) 
     )
 
 # ---------------------------------------------------------------------------
-# Streamlit Arayüzü
+# Streamlit Arayüzü (transactions tablosuna göre güncellendi)
 # ---------------------------------------------------------------------------
 def main():
     st.set_page_config(page_title="Portföy Nabız Paneli", layout="wide")
     st.title("📊 Portföy Nabız Paneli")
 
     try:
-        portfolio_df = load_portfolio_df()
-        if portfolio_df.empty:
-            st.info("Portföy (portfolio.csv) boş veya yüklenemedi."); return
+        active_portfolio_df = get_current_portfolio_df()
+        closed_positions_df = get_closed_positions_summary()
 
-        sold_df = portfolio_df[portfolio_df["satis_fiyat"].notna()]
-        active_df = portfolio_df[portfolio_df["satis_fiyat"].isnull()]
-        all_symbols = list(portfolio_df["hisse"].unique())
+        all_symbols = []
+        if not active_portfolio_df.empty:
+            all_symbols.extend(active_portfolio_df['hisse'].unique())
+        if not closed_positions_df.empty:
+            all_symbols.extend(closed_positions_df['hisse'].unique())
         
+        all_symbols = list(set(all_symbols)) # Tekrar edenleri temizle
+
+
         if not all_symbols:
-            st.info("Portföyde analiz edilecek hisse bulunmuyor."); return
+            st.info("Portföyde analiz edilecek hisse bulunmuyor (aktif veya kapanmış pozisyon yok)."); return
 
         all_prices_dict = get_all_prices(symbols=all_symbols)
 
         tab1, tab2 = st.tabs(["🛒 Geri Alım Fırsatları", "💸 Satış Sinyalleri"])
         with tab1:
             st.subheader("Satış Sonrası Geri Alım Analizi")
-            if sold_df.empty: 
+            if closed_positions_df.empty:
                 st.info("Analiz edilecek, satılmış pozisyon bulunmuyor.")
-            else: 
-                st.dataframe(buy_back_analysis(sold_df, all_prices_dict), use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(buy_back_analysis(closed_positions_df, all_prices_dict), use_container_width=True, hide_index=True)
         with tab2:
             st.subheader("Aktif Pozisyonlar için Satış Analizi")
-            if active_df.empty: 
+            if active_portfolio_df.empty:
                 st.info("Analiz edilecek, aktif pozisyon bulunmuyor.")
-            else: 
-                st.dataframe(sell_analysis(active_df, all_prices_dict), use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(sell_analysis(active_portfolio_df, all_prices_dict), use_container_width=True, hide_index=True)
 
-    except FileNotFoundError: 
-        st.error("Portföy dosyası (portfolio.csv) bulunamadı.")
-    except Exception as e: 
+    except Exception as e:
         st.error(f"Beklenmedik bir genel hata oluştu: {e}")
         st.code(traceback.format_exc())
 

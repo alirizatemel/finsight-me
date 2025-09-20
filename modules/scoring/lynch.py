@@ -2,7 +2,13 @@ import pandas as pd
 from modules.utils import safe_float
 
 def peter_lynch_score_card(row):
-    row = row.iloc[0]
+    if isinstance(row, pd.DataFrame):
+        if row.empty:
+            row = pd.Series(dtype=float)
+        else:
+            row = row.iloc[0]
+    elif not isinstance(row, pd.Series):
+        row = pd.Series(dtype=float)
     score = 0
     lines = []
 

@@ -17,22 +17,33 @@ def graham_score(row):
     return score
 
 def graham_score_card(row):
-    row = row.iloc[0]
+    # Kabul edilen tipler: DataFrame (tek satır beklenir) veya Series
+    if isinstance(row, pd.DataFrame):
+        if row.empty:
+            row = pd.Series(dtype=float)
+        else:
+            row = row.iloc[0]
+    elif not isinstance(row, pd.Series):
+        row = pd.Series(dtype=float)
+
     score = 0
     lines = []
 
-    kriterler = [
-        ("F/K", round(row.get("F/K"),2), lambda x: x < 15, "F/K < 15"),
-        ("PD/DD", round(row.get("PD/DD"),2), lambda x: x < 1.5, "PD/DD < 1.5"),
-        ("Cari Oran", round(row.get("Cari Oran"),2), lambda x: 2 < x < 100, "2 < Cari Oran < 100"),
-        ("Nakit Akışı", row.get("İşletme Faaliyetlerinden Nakit Akışları"), lambda x: x > 0, "İşletme Nakit Akışı > 0"),
-        ("Serbest Nakit Akışı", row.get("Yıllıklandırılmış Serbest Nakit Akışı"), lambda x: x > 0, "Yıllıklandırılmış FCF > 0")
+    items = [
+        ("F/K", row.get("F/K") if hasattr(row, "get") else None, lambda x: x < 15, "F/K < 15"),
+        ("PD/DD", row.get("PD/DD") if hasattr(row, "get") else None, lambda x: x < 1.5, "PD/DD < 1.5"),
+        ("Cari Oran", row.get("Cari Oran") if hasattr(row, "get") else None, lambda x: 2 < x < 100, "2 < Cari Oran < 100"),
+        ("Nakit Akışı", row.get("İşletme Faaliyetlerinden Nakit Akışları") if hasattr(row, "get") else None, lambda x: x > 0, "İşletme Nakit Akışı > 0"),
+        ("Serbest Nakit Akışı", row.get("Yıllıklandırılmış Serbest Nakit Akışı") if hasattr(row, "get") else None, lambda x: x > 0, "Yıllıklandırılmış FCF > 0"),
     ]
 
-    for label, value, condition, desc in kriterler:
-        if pd.notnull(value):
-            passed = condition(value)
-            lines.append(f"- {label} = {value} → {'✅' if passed else '❌'} ({desc})")
+    for label, value, condition, desc in items:
+        v = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+        if pd.notna(v):
+            passed = bool(condition(float(v)))
+            # Güvenli gösterim
+            disp = f"{float(v):.2f}" if label in ("F/K", "PD/DD", "Cari Oran") else f"{float(v):.0f}"
+            lines.append(f"- {label} = {disp} → {'✅' if passed else '❌'} ({desc})")
             score += int(passed)
         else:
             lines.append(f"- {label} verisi eksik")

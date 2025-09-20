@@ -2,6 +2,7 @@
 data/
 data_cache/
 sample_data/
+downloads/
 
 # __pycache__ ve Python derleyici artıkları
 __pycache__/

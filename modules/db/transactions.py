@@ -1,14 +1,14 @@
 import pandas as pd
 from typing import Optional
 from modules.db.core import  execute_one, read_df
-from datetime import datetime, timezone 
+from datetime import datetime, timezone
 
 def add_transaction(
-    hisse: str, 
-    tarih, 
-    islem_tipi: str, 
-    lot: int, 
-    fiyat: float, 
+    hisse: str,
+    tarih,
+    islem_tipi: str,
+    lot: int,
+    fiyat: float,
     notu: str = "",
     rsi: Optional[float] = None, # YENİ
     vfi: Optional[float] = None  # YENİ
@@ -21,9 +21,9 @@ def add_transaction(
         INSERT INTO transactions (hisse, tarih, islem_tipi, lot, fiyat, notu, rsi, vfi)
         VALUES (:hisse, :tarih, :islem_tipi, :lot, :fiyat, :notu, :rsi, :vfi)
     """
-    
+
     safe_notu = notu if notu is not None else ""
-    
+
     # Parametreler sözlüğüne yeni değerleri ekliyoruz.
     params = {
         "hisse": hisse.upper().strip(),
@@ -87,7 +87,7 @@ def get_current_portfolio_df() -> pd.DataFrame:
         toplam_tutar_alis=('toplam_tutar', 'sum')
     ).reset_index()
     maliyet_summary['ortalama_maliyet'] = maliyet_summary['toplam_tutar_alis'] / maliyet_summary['toplam_lot_alis']
-    
+
     # Satışları hesapla
     satis_summary = satislar.groupby('hisse').agg(
         toplam_lot_satis=('lot', 'sum')
@@ -99,16 +99,16 @@ def get_current_portfolio_df() -> pd.DataFrame:
 
     # Mevcut lot sayısını hesapla
     portfolio['lot'] = portfolio['toplam_lot_alis'] - portfolio['toplam_lot_satis']
-    
+
     # Sadece eldeki pozisyonları göster (lot > 0)
     portfolio = portfolio[portfolio['lot'] > 0].copy()
 
     if portfolio.empty:
         return pd.DataFrame(columns=["hisse", "lot", "ortalama_maliyet", "toplam_maliyet"])
-        
+
     # Toplam maliyeti hesapla ve gereksiz sütunları at
     portfolio['toplam_maliyet'] = portfolio['lot'] * portfolio['ortalama_maliyet']
-    
+
     final_cols = ["hisse", "lot", "ortalama_maliyet", "toplam_maliyet"]
     portfolio = portfolio[final_cols].sort_values("toplam_maliyet", ascending=False)
 
@@ -120,7 +120,7 @@ def get_closed_positions_summary() -> pd.DataFrame:
     Kapanmış (tamamı satılmış) pozisyonların özetini hesaplar.
     Her hisse için toplam alım ve satım maliyet/değerlerini döndürür.
     """
-    
+
     df = load_all_transactions_df()
     if df.empty:
         return pd.DataFrame()
@@ -142,12 +142,13 @@ def get_closed_positions_summary() -> pd.DataFrame:
 
     # Sadece lot sayıları eşit olanları (yani tamamen kapanmış pozisyonları) bul
     closed = pd.merge(
-        alis_summary, 
-        satis_summary, 
-        on='hisse', 
+        alis_summary,
+        satis_summary,
+        on='hisse',
         how='inner', # Sadece her iki df'te de olan hisseler
         suffixes=('_alis', '_satis')
     )
+    # Burada `toplam_lot_alis` ve `toplam_lot_satis` sütunları artık `closed` DataFrame'inde.
     closed = closed[closed['toplam_lot_alis'] == closed['toplam_lot_satis']]
 
     if closed.empty:
@@ -155,7 +156,7 @@ def get_closed_positions_summary() -> pd.DataFrame:
 
     # Şimdi bu kapanmış hisseler için maliyet ve satış tutarlarını hesapla
     closed_hisseler = closed['hisse'].unique()
-    
+
     alislar['tutar'] = alislar['lot'] * alislar['fiyat']
     satislar['tutar'] = satislar['lot'] * satislar['fiyat']
 
@@ -163,15 +164,17 @@ def get_closed_positions_summary() -> pd.DataFrame:
     for hisse in closed_hisseler:
         hisse_alislar = alislar[alislar['hisse'] == hisse]
         hisse_satislar = satislar[satislar['hisse'] == hisse]
-        
+
         toplam_maliyet = hisse_alislar['tutar'].sum()
         toplam_satis_tutari = hisse_satislar['tutar'].sum()
-        
+
         ilk_alis = hisse_alislar['tarih'].min()
         son_satis = hisse_satislar['tarih'].max()
-        
+
         final_summary.append({
             "hisse": hisse,
+            "toplam_lot_alis": hisse_alislar['lot'].sum(),
+            "toplam_lot_satis": hisse_satislar['lot'].sum(),
             "toplam_maliyet": toplam_maliyet,
             "toplam_satis_tutari": toplam_satis_tutari,
             "ilk_alis_tarihi": ilk_alis,

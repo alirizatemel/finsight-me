@@ -48,7 +48,10 @@ def build_snapshot(balance_df, income_df, cashflow_df: Optional[pd.DataFrame] = 
         total_liabilities      = (short or 0) + (long or 0) if None not in (short, long) else None,
         total_assets           = get_value(balance_df, "Toplam Varlıklar",         period),
         current_assets         = get_value(balance_df, "Toplam Dönen Varlıklar",   period),
-        equity                 = get_value(balance_df, "Ana Ortaklığa Ait Özkaynaklar", period),
+        equity                 = (lambda primary: primary if primary not in (None, 0)
+                                  else get_value(balance_df, "Toplam Özkaynaklar", period))(
+                                      get_value(balance_df, "Ana Ortaklığa Ait Özkaynaklar", period)
+                                  ),
         pp_e                   = get_value(balance_df, "Maddi Duran Varlıklar",    period),
         trade_receivables      = get_value(balance_df, "Ticari Alacaklar",         period),
 

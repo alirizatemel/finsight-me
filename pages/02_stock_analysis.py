@@ -10,12 +10,14 @@ from modules.scores import (
     fcf_detailed_analysis_plot,
     fcf_yield_time_series
 )
+from modules.finance.profitability import build_profitability_table, compute_net_profit_cagr
 from modules.finance.dcf import monte_carlo_dcf_simple
 from modules.utils import period_order
 
 from modules.technical_analysis.cache_manager import get_price_df
 from config import RADAR_XLSX
 import pandas_ta as ta
+from typing import Optional
 
 @st.cache_data(show_spinner=False) # Üst fonksiyon zaten spinner gösteriyor
 def apply_technical_filters(symbol: str, _df_price: pd.DataFrame) -> dict:
@@ -181,8 +183,8 @@ def main():
             st.caption("🟢 Sağlam" if scores["lynch_skor"] == 3 else "🟡 Orta" if scores["lynch_skor"] == 2 else "🔴 Zayıf")
 
         # DEĞİŞTİRİLDİ: Yeni sekme eklendi
-        tab_score, tab_fcf, tab_valuation, tab_tech = st.tabs([
-            "📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", "📈 Teknik Analiz"
+        tab_score, tab_fcf, tab_valuation, tab_profit, tab_tech = st.tabs([
+            "📊 Skor Detayları", "🔍 FCF Analizi", "⚖️ Değerleme", "💹 Karlılık (7Y)", "📈 Teknik Analiz"
         ])
         
         copy_details = None
@@ -236,8 +238,16 @@ def main():
                     sim_vals = monte_carlo_dcf_simple(last_fcf, years, int(n_sims), wacc_mu, g_mu)
                     intrinsic = np.median(sim_vals)
 
-                    cur_price = radar_row.get("Son Fiyat", pd.Series(dtype=float)).iat[0] if "Son Fiyat" in radar_row else None
-                    market_cap = radar_row.get("Piyasa Değeri", pd.Series(dtype=float)).iat[0] if "Piyasa Değeri" in radar_row else None
+                    cur_price = None
+                    market_cap = None
+                    try:
+                        if hasattr(radar_row, "columns") and "Son Fiyat" in radar_row.columns and len(radar_row) > 0:
+                            cur_price = radar_row["Son Fiyat"].iloc[0]
+                        if hasattr(radar_row, "columns") and "Piyasa Değeri" in radar_row.columns and len(radar_row) > 0:
+                            market_cap = radar_row["Piyasa Değeri"].iloc[0]
+                    except Exception:
+                        cur_price = None
+                        market_cap = None
 
                     if cur_price and market_cap and market_cap > 0:
                         shares_out = market_cap / cur_price
@@ -257,6 +267,93 @@ def main():
                     ax.set_xlabel("İçsel Değer (TL)"); ax.set_ylabel("Sıklık")
                     ax.set_title(f"{n_sims:,} Senaryoda Değer Dağılımı"); ax.legend()
                     st.pyplot(fig)
+        
+        # YENİ: Karlılık (7Y) sekmesi
+        with tab_profit:
+            st.subheader("7 Yıllık Karlılık ve Getiri Oranları")
+            try:
+                prof_df = build_profitability_table(symbol, last_n_years=7)
+            except Exception as e:
+                prof_df = None
+                st.warning(f"Karlılık verileri oluşturulamadı: {e}")
+
+            if prof_df is None or prof_df.empty:
+                st.info("Yeterli yıllık veri yok veya veriler eksik.")
+            else:
+                # Özet metrikler
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    med_margin = prof_df["Net Marj (%)"].median(skipna=True)
+                    st.metric("Medyan Net Marj (7Y)", f"{med_margin:.1f}%" if pd.notna(med_margin) else "-")
+                with col_b:
+                    med_roe = prof_df["ROE (%)"].median(skipna=True)
+                    st.metric("Medyan ROE (7Y)", f"{med_roe:.1f}%" if pd.notna(med_roe) else "-")
+                with col_c:
+                    cagr = compute_net_profit_cagr(prof_df)
+                    st.metric("Net Kâr CAGR (7Y)", f"{cagr:.1f}%" if cagr is not None else "-")
+
+                # ROE/ROA kısa açıklamaları
+                st.caption(
+                    "ROE (%): Özsermaye kârlılığı = Net Kâr / Özkaynaklar.  "
+                    "ROA (%): Aktif kârlılığı = Net Kâr / Toplam Varlıklar."
+                )
+
+                # Yorumlayıcı rozetler (eşiklere göre)
+                def _rate(value: Optional[float], kind: str):
+                    import math
+                    if value is None or (isinstance(value, float) and (pd.isna(value) or math.isinf(value))):
+                        return "⚪", "Veri yok"
+                    v = float(value)
+                    if kind in ("margin", "roe", "roa"):
+                        if v < 0:          return "🔴", "Çok kötü"
+                        elif v < 5:        return "🟠", "Kötü"
+                        elif v < 10:       return "🟡", "Vasat"
+                        elif v < 20:       return "🟢", "İyi"
+                        else:              return "🟢", "Çok iyi"
+                    if kind == "cagr":
+                        if v <= -10:       return "🔴", "Çok kötü"
+                        elif v < 0:        return "🟠", "Kötü"
+                        elif v < 5:        return "🟡", "Vasat"
+                        elif v < 15:       return "🟢", "İyi"
+                        else:              return "🟢", "Çok iyi"
+                    return "⚪", "-"
+
+                with st.container():
+                    st.markdown("**Nasıl yorumlanır? (Hızlı İpucu)**")
+                    r_margin = _rate(med_margin, "margin") if 'med_margin' in locals() else ("⚪","Veri yok")
+                    r_roe    = _rate(med_roe, "roe") if 'med_roe' in locals() else ("⚪","Veri yok")
+                    r_cagr   = _rate(cagr, "cagr")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.markdown(f"Net Marj: {r_margin[0]} {r_margin[1]}")
+                    with c2:
+                        st.markdown(f"ROE: {r_roe[0]} {r_roe[1]}")
+                    with c3:
+                        st.markdown(f"Net Kâr CAGR: {r_cagr[0]} {r_cagr[1]}")
+
+                    with st.expander("Eşikler (genel rehber)"):
+                        st.markdown("- 🔴 Çok kötü  •  🟠 Kötü  •  🟡 Vasat  •  🟢 İyi  •  🟢 Çok iyi")
+                        st.markdown("- Net Marj/ROE/ROA: <0 çok kötü, 0-5 kötü, 5-10 vasat, 10-20 iyi, 20+ çok iyi")
+                        st.markdown("- Net Kâr CAGR: ≤-10 çok kötü, -10–0 kötü, 0–5 vasat, 5–15 iyi, 15+ çok iyi")
+                        st.caption("Not: Sektöre göre makul aralıklar değişebilir.")
+
+                with st.expander("📋 Yıllık Karlılık Tablosu", expanded=False):
+                    fmt_cols = {
+                        "Satışlar": "{:,.0f}",
+                        "Net Kâr": "{:,.0f}",
+                        "Özkaynaklar (Yıl Sonu)": "{:,.0f}",
+                        "Varlıklar (Yıl Sonu)": "{:,.0f}",
+                        "Net Marj (%)": "{:.1f}",
+                        "ROE (%)": "{:.1f}",
+                        "ROA (%)": "{:.1f}",
+                    }
+                    st.dataframe(prof_df.style.format(fmt_cols))
+
+                st.subheader("Oranlar – Zaman Serisi")
+                ratios = prof_df[["Net Marj (%)", "ROE (%)", "ROA (%)"]].copy()
+                # Yılı x eksenine düzgün oturtmak için index'i yıl olarak kullanalım
+                ratios.index.name = "Yıl"
+                st.line_chart(ratios)
         
         # YENİ EKLENDİ: Teknik Analiz sekmesinin içeriği
         with tab_tech:
